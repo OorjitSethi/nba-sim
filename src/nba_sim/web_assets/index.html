@@ -1,0 +1,1178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A local interface for the NBA Sim research engine."
+    />
+    <title>NBA Sim — Local Lab</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="NBA Sim home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>NBA SIM</span>
+        </a>
+        <nav class="primary-nav" aria-label="Dashboard sections">
+          <button class="nav-item active" data-view="matchup">Matchup lab</button>
+          <button class="nav-item" data-view="gameday">Game day</button>
+          <button class="nav-item" data-view="league">League sim</button>
+          <button class="nav-item" data-view="franchise">Franchise</button>
+          <button class="nav-item" data-view="competition">Competitions</button>
+          <button class="nav-item" data-view="health">Model health</button>
+        </nav>
+        <div class="topbar-actions">
+          <div class="data-badge">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="data-season">Loading data</span>
+          </div>
+          <button class="guide-button" type="button" data-guide-topic="start">
+            Guide
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="view active" id="view-matchup">
+          <div class="section-intro">
+            <div>
+              <p class="eyebrow">Simulation workspace</p>
+              <h1>Build a matchup.<br />See the whole distribution.</h1>
+            </div>
+            <p class="intro-copy">
+              Set the rotation, choose the simulation depth, and run the same
+              calibrated engine used by the command line. Every run receives a
+              fresh seed automatically and keeps it in the result.
+              <button class="guide-link" type="button" data-guide-topic="matchup">
+                How to use Matchup Lab →
+              </button>
+            </p>
+          </div>
+
+          <div class="workspace-grid">
+            <form class="control-panel" id="matchup-form">
+              <div class="mode-switch" aria-label="Simulation mode">
+                <button type="button" class="mode-option active" data-mode="single">
+                  <span>Single game</span>
+                  <small>Play-by-play</small>
+                </button>
+                <button type="button" class="mode-option" data-mode="monte_carlo">
+                  <span>Monte Carlo</span>
+                  <small>Raw distribution</small>
+                </button>
+                <button type="button" class="mode-option" data-mode="hybrid">
+                  <span>Hybrid</span>
+                  <small>Macro calibrated</small>
+                </button>
+              </div>
+
+              <div class="matchup-picker">
+                <label>
+                  <span>Away</span>
+                  <select id="away-team" name="away" aria-label="Away team"></select>
+                </label>
+                <button class="swap-button" id="swap-teams" type="button" aria-label="Swap teams">
+                  ⇄
+                </button>
+                <label>
+                  <span>Home</span>
+                  <select id="home-team" name="home" aria-label="Home team"></select>
+                </label>
+              </div>
+
+              <div class="rotation-grid">
+                <section class="rotation-card">
+                  <div class="rotation-heading">
+                    <div>
+                      <span class="team-kicker">Away current roster</span>
+                      <strong id="away-roster-title">—</strong>
+                    </div>
+                    <span>Out · cap</span>
+                  </div>
+                  <div id="away-roster" class="roster-list"></div>
+                </section>
+                <section class="rotation-card">
+                  <div class="rotation-heading">
+                    <div>
+                      <span class="team-kicker">Home current roster</span>
+                      <strong id="home-roster-title">—</strong>
+                    </div>
+                    <span>Out · cap</span>
+                  </div>
+                  <div id="home-roster" class="roster-list"></div>
+                </section>
+              </div>
+
+              <div class="rotation-actions">
+                <span>STAT = official prior-season profile · PRIOR = modeled baseline</span>
+                <div>
+                  <label class="health-link-toggle" title="Apply saved Franchise health restrictions to both teams">
+                    <input id="matchup-use-health" type="checkbox" checked />
+                    <span>Use Franchise health</span>
+                  </label>
+                  <label class="health-link-toggle" title="Apply the saved coaching plan and chemistry context">
+                    <input id="matchup-use-environment" type="checkbox" checked />
+                    <span>Use chemistry &amp; coaching</span>
+                  </label>
+                  <button id="reset-availability" type="button">Reset availability</button>
+                </div>
+              </div>
+
+              <div class="run-settings">
+                <div class="seed-policy" title="A new reproducible seed is generated when you run">
+                  <span class="seed-spark" aria-hidden="true">✦</span>
+                  <div><strong>Fresh seed</strong><small>Generated on run</small></div>
+                </div>
+                <label id="trials-field" class="hidden">
+                  <span>Simulations</span>
+                  <input id="matchup-trials" type="number" min="25" max="10000" value="100" />
+                </label>
+                <button class="run-button" type="submit">
+                  <span id="run-label">Simulate game</span>
+                  <span aria-hidden="true">→</span>
+                </button>
+              </div>
+            </form>
+
+            <section class="result-panel" id="matchup-result" aria-live="polite">
+              <div class="empty-state">
+                <div class="court-mark" aria-hidden="true">
+                  <span></span>
+                </div>
+                <p class="eyebrow">Ready when you are</p>
+                <h2>No result yet</h2>
+                <p>Configure the matchup and run a simulation.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-gameday">
+          <div class="section-intro compact">
+            <div>
+              <p class="eyebrow">Official point-in-time slate</p>
+              <h1>The schedule,<br />as it actually exists.</h1>
+            </div>
+            <p class="intro-copy">
+              Forecast published games from the official NBA feed. Injury
+              reports are matched to current player IDs; uncertain statuses
+              become explicit availability scenarios inside the distribution.
+              <button class="guide-link" type="button" data-guide-topic="gameday">
+                Understand Game Day →
+              </button>
+            </p>
+          </div>
+
+          <section class="slate-summary" id="slate-summary" aria-live="polite">
+            <div class="loading-block">Reading the official schedule snapshot…</div>
+          </section>
+
+          <div class="slate-workspace">
+            <section class="slate-panel">
+              <div class="slate-panel-heading">
+                <div>
+                  <p class="eyebrow">2026–27 feed</p>
+                  <h2>Published games</h2>
+                </div>
+                <button class="quiet-button" id="refresh-schedule" type="button">
+                  Refresh official feed
+                </button>
+              </div>
+              <div class="schedule-feed" id="schedule-feed"></div>
+            </section>
+
+            <section class="result-panel game-day-result" id="game-day-result" aria-live="polite">
+              <div class="empty-state">
+                <div class="court-mark" aria-hidden="true"><span></span></div>
+                <p class="eyebrow">Availability-aware forecast</p>
+                <h2>Choose a published game</h2>
+                <p>Each forecast receives a fresh reproducible seed and runs 1,000 calibrated scenarios.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-league">
+          <div class="section-intro compact">
+            <div>
+              <p class="eyebrow">Full regular season</p>
+              <h1>One click.<br />All 1,230 games.</h1>
+            </div>
+            <p class="intro-copy">
+              Simulate a complete 30-team, 82-game NBA season with the same
+              possession engine as Matchup Lab. Each matchup is played once,
+              preserving the upsets and variance of a real season. Browse every
+              result and its native event-built player box score.
+              <button class="guide-link" type="button" data-guide-topic="league">
+                Read the League Sim guide →
+              </button>
+            </p>
+          </div>
+
+          <section class="league-launch" id="league-launch">
+            <div class="league-launch-copy">
+              <p class="eyebrow">2026–27 regular season</p>
+              <h2 id="league-launch-title">Ready to tip off</h2>
+              <p>
+                Exact 41-home / 41-away balance, NBA opponent frequencies,
+                chronological rating updates, and one complete possession-level
+                game for every scheduled matchup.
+              </p>
+            </div>
+            <div class="league-launch-metrics">
+              <div><strong>30</strong><span>Teams</span></div>
+              <div><strong>82</strong><span>Games each</span></div>
+              <div><strong>1,230</strong><span>Box scores</span></div>
+            </div>
+            <button class="run-button league-run-button" id="run-league" type="button">
+              <span>Simulate full season</span><span aria-hidden="true">→</span>
+            </button>
+            <section class="league-progress hidden" id="league-progress" aria-live="polite">
+              <div class="league-progress-heading">
+                <div>
+                  <p class="eyebrow" id="league-progress-kicker">Preparing detailed season</p>
+                  <h3 id="league-progress-matchup">Loading rosters and calibrated ratings…</h3>
+                </div>
+                <strong id="league-progress-percent">0.00%</strong>
+              </div>
+              <div
+                class="league-progress-track"
+                id="league-progress-track"
+                role="progressbar"
+                aria-label="Detailed league simulation progress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+              >
+                <span id="league-progress-fill"></span>
+              </div>
+              <div class="league-progress-meta">
+                <span id="league-progress-count">0 / 1,230 games</span>
+                <span id="league-progress-trial">One detailed game per matchup</span>
+                <span id="league-progress-elapsed">Elapsed 0s</span>
+                <span id="league-progress-eta">Estimating finish…</span>
+                <span id="league-progress-seed">Seed —</span>
+              </div>
+              <button class="league-cancel-button" id="cancel-league" type="button">
+                Stop simulation
+              </button>
+            </section>
+          </section>
+
+          <section class="league-results hidden" id="league-results" aria-live="polite">
+            <div class="league-season-bar" id="league-season-bar"></div>
+            <div class="league-section-tabs" role="tablist" aria-label="League result sections">
+              <button class="league-section-tab active" data-league-tab="standings" type="button">Standings</button>
+              <button class="league-section-tab" data-league-tab="schedule" type="button">All games & box scores</button>
+            </div>
+
+            <div class="league-panel active" id="league-panel-standings">
+              <div class="conference-grid" id="league-standings"></div>
+            </div>
+
+            <div class="league-panel" id="league-panel-schedule">
+              <div class="league-schedule-toolbar">
+                <label>
+                  <span>Team</span>
+                  <select id="league-team-filter"></select>
+                </label>
+                <label>
+                  <span>Month</span>
+                  <select id="league-month-filter"></select>
+                </label>
+                <div class="league-game-count" id="league-game-count"></div>
+              </div>
+              <div class="league-browser">
+                <section class="league-game-list-wrap">
+                  <div class="league-game-list" id="league-game-list"></div>
+                  <button class="quiet-button league-more hidden" id="league-more" type="button">Show more games</button>
+                </section>
+                <section class="league-boxscore" id="league-boxscore">
+                  <div class="empty-state inline">
+                    <p class="eyebrow">Game detail</p>
+                    <p>Choose a game to open its full player box score.</p>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-franchise">
+          <div class="section-intro compact">
+            <div>
+              <p class="eyebrow">Front office · phase three</p>
+              <h1>A league that<br />remembers everything.</h1>
+            </div>
+            <p class="intro-copy">
+              Begin from the current 2026–27 roster universe. Every calendar
+              move is saved as a verifiable event, and any decision point can
+              become an independent branch without changing the original. The
+              official cap ladder, apron transaction gates, and uncertainty-aware
+              player development are available in dedicated workspaces.
+              <button class="guide-link" type="button" data-guide-topic="franchise">
+                Learn the front office →
+              </button>
+            </p>
+          </div>
+
+          <section class="franchise-onboarding" id="franchise-onboarding">
+            <form class="franchise-create-card" id="franchise-create-form">
+              <div>
+                <p class="eyebrow">Create your universe</p>
+                <h2>Take control</h2>
+                <p>
+                  Create the canonical league, current rosters, calendar,
+                  durable save, and event ledger. Phase three adds official-age
+                  lifecycle baselines and multi-season development scenarios.
+                </p>
+              </div>
+              <div class="franchise-create-fields">
+                <label>
+                  <span>League name</span>
+                  <input id="franchise-name" maxlength="80" value="My NBA Universe" />
+                </label>
+                <label>
+                  <span>Your team</span>
+                  <select id="franchise-team"></select>
+                </label>
+              </div>
+              <div class="franchise-create-action">
+                <div class="seed-policy compact" title="A new reproducible seed is generated when you create the league">
+                  <span class="seed-spark" aria-hidden="true">✦</span>
+                  <div><strong>Fresh seed</strong><small>Permanent league identity</small></div>
+                </div>
+                <button class="run-button" type="submit">
+                  <span>Create franchise</span><span aria-hidden="true">→</span>
+                </button>
+              </div>
+            </form>
+
+            <aside class="franchise-kernel-card">
+              <p class="eyebrow">Kernel coverage</p>
+              <h2>Built for the long game</h2>
+              <div class="kernel-principles">
+                <div><strong>01</strong><span>Deterministic state</span></div>
+                <div><strong>02</strong><span>Hash-chained events</span></div>
+                <div><strong>03</strong><span>Durable local saves</span></div>
+                <div><strong>04</strong><span>Independent branches</span></div>
+                <div><strong>05</strong><span>Player lifecycle state</span></div>
+              </div>
+              <p class="fine-print">
+                Missing real salaries and traded-pick ownership are never
+                guessed. Generated draft classes begin with each team owning
+                its two picks; authoritative imports can supersede that default.
+              </p>
+            </aside>
+          </section>
+
+          <section class="franchise-workspace hidden" id="franchise-workspace" aria-live="polite">
+            <header class="franchise-command-bar">
+              <div class="franchise-save-picker">
+                <label>
+                  <span>Active save</span>
+                  <select id="franchise-save-select"></select>
+                </label>
+                <button class="quiet-button" id="new-franchise" type="button">New league</button>
+              </div>
+              <form class="franchise-branch-form" id="franchise-branch-form">
+                <label>
+                  <span>Branch this moment</span>
+                  <input id="franchise-branch-name" maxlength="80" placeholder="e.g. Keep the young core" />
+                </label>
+                <button class="quiet-button" type="submit">Create branch</button>
+              </form>
+            </header>
+
+            <div class="franchise-workspace-tabs" role="tablist" aria-label="Franchise workspaces">
+              <button class="franchise-workspace-tab active" data-franchise-tab="overview" type="button">League office</button>
+              <button class="franchise-workspace-tab" data-franchise-tab="cap" type="button">Cap &amp; CBA</button>
+              <button class="franchise-workspace-tab" data-franchise-tab="trades" type="button">Trade Center</button>
+              <button class="franchise-workspace-tab" data-franchise-tab="development" type="button">Player development</button>
+              <button class="franchise-workspace-tab" data-franchise-tab="health" type="button">Health &amp; workload</button>
+              <button class="franchise-workspace-tab" data-franchise-tab="chemistry" type="button">Chemistry &amp; coaching</button>
+              <button class="franchise-workspace-tab" data-franchise-tab="scouting" type="button">Players &amp; scouting</button>
+              <button class="franchise-workspace-tab" data-franchise-tab="draft" type="button">Draft</button>
+            </div>
+
+            <section class="franchise-hero franchise-overview-section">
+              <div>
+                <p class="eyebrow" id="franchise-hero-kicker">2026–27 · Main</p>
+                <h2 id="franchise-hero-title">—</h2>
+                <p id="franchise-hero-copy">Loading canonical league state…</p>
+              </div>
+              <div class="franchise-date-block">
+                <span>League date</span>
+                <strong id="franchise-current-date">—</strong>
+                <small id="franchise-phase">—</small>
+              </div>
+            </section>
+
+            <div class="franchise-metric-grid franchise-overview-section" id="franchise-metrics"></div>
+
+            <div class="franchise-main-grid franchise-overview-section">
+              <section class="franchise-panel franchise-calendar-panel">
+                <div class="franchise-panel-heading">
+                  <div><p class="eyebrow">Calendar</p><h2>Move deliberately</h2></div>
+                  <span id="franchise-autosave-state">Autosaved</span>
+                </div>
+                <p>
+                  Advancing time records an immutable event and immediately
+                  saves the resulting state. Branch first whenever you want to
+                  preserve this decision point.
+                </p>
+                <div class="franchise-advance-actions">
+                  <button class="run-button" data-franchise-days="1" type="button">
+                    <span>Advance one day</span><span aria-hidden="true">→</span>
+                  </button>
+                  <button class="quiet-button" data-franchise-days="7" type="button">
+                    Advance one week
+                  </button>
+                </div>
+                <div class="franchise-integrity" id="franchise-integrity"></div>
+              </section>
+
+              <section class="franchise-panel franchise-coverage-panel">
+                <div class="franchise-panel-heading">
+                  <div><p class="eyebrow">Canonical state</p><h2>System coverage</h2></div>
+                </div>
+                <div class="franchise-coverage-list" id="franchise-coverage"></div>
+              </section>
+            </div>
+
+            <div class="franchise-detail-grid franchise-overview-section">
+              <section class="franchise-panel">
+                <div class="franchise-panel-heading">
+                  <div><p class="eyebrow">Current roster</p><h2 id="franchise-roster-title">—</h2></div>
+                  <span id="franchise-roster-count">—</span>
+                </div>
+                <div class="franchise-roster-table" id="franchise-roster"></div>
+              </section>
+              <section class="franchise-panel">
+                <div class="franchise-panel-heading">
+                  <div><p class="eyebrow">Event sourced</p><h2>League ledger</h2></div>
+                  <span id="franchise-event-count">—</span>
+                </div>
+                <div class="franchise-event-ledger" id="franchise-events"></div>
+              </section>
+            </div>
+
+            <section class="franchise-cap-workspace hidden" id="franchise-cap-workspace">
+              <div class="cap-guide-card">
+                <div>
+                  <p class="eyebrow">Official 2026–27 system levels</p>
+                  <h2>Know the line before the move</h2>
+                  <p>
+                    The salary cap is not a spending ceiling. Teams can operate
+                    above it through exceptions, but the tax and apron lines add
+                    cost and transaction restrictions. The checker below applies
+                    the selected rule to one team at a time.
+                  </p>
+                </div>
+                <button class="quiet-button" type="button" data-guide-topic="cba">
+                  Open the CBA guide
+                </button>
+              </div>
+
+              <div class="cap-threshold-grid" id="cap-thresholds"></div>
+
+              <div class="cap-main-grid">
+                <section class="franchise-panel">
+                  <div class="franchise-panel-heading">
+                    <div><p class="eyebrow">Team cap sheet</p><h2 id="cap-sheet-title">—</h2></div>
+                    <span id="cap-sheet-coverage">—</span>
+                  </div>
+                  <div class="cap-data-warning" id="cap-data-warning"></div>
+                  <div class="cap-roster-table" id="cap-roster-table"></div>
+                </section>
+
+                <form class="franchise-panel cap-scenario-form" id="cap-scenario-form">
+                  <div class="franchise-panel-heading">
+                    <div><p class="eyebrow">Transaction checker</p><h2>Test a move</h2></div>
+                    <span>Amounts in millions</span>
+                  </div>
+                  <p class="cap-form-copy">
+                    Enter the team’s full apron salary, then the salary leaving
+                    and arriving. Choose the mechanism you plan to use; the
+                    checker explains every pass or blocker.
+                  </p>
+                  <div class="cap-form-fields">
+                    <label>
+                      <span>Current apron salary</span>
+                      <input id="cap-team-salary" type="number" min="0" max="1000" step="0.001" value="205" required />
+                    </label>
+                    <label>
+                      <span>Outgoing salary</span>
+                      <input id="cap-outgoing-salary" type="number" min="0" max="1000" step="0.001" value="0" required />
+                    </label>
+                    <label>
+                      <span>Incoming salary</span>
+                      <input id="cap-incoming-salary" type="number" min="0" max="1000" step="0.001" value="6" required />
+                    </label>
+                    <label>
+                      <span>Transaction path</span>
+                      <select id="cap-action">
+                        <option value="standard_trade">Standard one-player trade</option>
+                        <option value="expanded_trade">Expanded trade exception</option>
+                        <option value="aggregated_trade">Aggregate outgoing salaries</option>
+                        <option value="sign_and_trade_acquisition">Receive sign-and-trade player</option>
+                        <option value="non_taxpayer_mle">Non-taxpayer MLE</option>
+                        <option value="taxpayer_mle" selected>Taxpayer MLE</option>
+                        <option value="room_mle">Room MLE</option>
+                        <option value="send_cash">Send cash in trade</option>
+                      </select>
+                    </label>
+                  </div>
+                  <button class="run-button full" type="submit">
+                    <span>Check transaction</span><span aria-hidden="true">→</span>
+                  </button>
+                  <div class="cap-scenario-result" id="cap-scenario-result" aria-live="polite">
+                    <p>Run a scenario to see the resulting cap band, hard cap, matching limit, and blockers.</p>
+                  </div>
+                </form>
+              </div>
+            </section>
+
+            <section class="franchise-health-workspace hidden" id="franchise-trade-workspace">
+              <div class="development-guide-card">
+                <div>
+                  <p class="eyebrow">Trading &amp; asset market · phase eight</p>
+                  <h2>Every asset has a price. Every rule has a switch.</h2>
+                  <p>Construct player-and-pick trades, see the exact legality and valuation response from both teams, or let the other 29 front offices trade realistically among themselves.</p>
+                </div>
+                <button class="quiet-button" type="button" data-guide-topic="trades">How the trade market works</button>
+              </div>
+
+              <section class="lifecycle-initialize-card" id="trade-initialize-card">
+                <div>
+                  <p class="eyebrow">League asset ledger</p>
+                  <h2>Open the Trade Center</h2>
+                  <p>Adds the configurable rule policy and complete 2027–33 pick-ownership horizon to this branch. Existing draft ownership is preserved.</p>
+                </div>
+                <button class="run-button" id="trade-initialize" type="button"><span>Initialize trade market</span><span>→</span></button>
+              </section>
+
+              <div class="trade-workspace hidden" id="trade-ready">
+                <section class="trade-command-card">
+                  <div>
+                    <p class="eyebrow">Trade machine</p>
+                    <h2><span id="trade-user-team">Your team</span> ↔ <select id="trade-partner" aria-label="Trade partner"></select></h2>
+                    <p id="trade-salary-note">Loading contract coverage…</p>
+                  </div>
+                  <div class="trade-command-actions">
+                    <button class="quiet-button" id="trade-clear" type="button">Clear proposal</button>
+                    <button class="run-button" id="trade-evaluate" type="button"><span>Evaluate trade</span><span>→</span></button>
+                  </div>
+                </section>
+
+                <div class="trade-builder-grid">
+                  <section class="franchise-panel trade-package">
+                    <div class="franchise-panel-heading"><div><p class="eyebrow">You send</p><h2 id="trade-user-package-title">—</h2></div><span id="trade-user-package-count">0 assets</span></div>
+                    <div class="trade-asset-list" id="trade-user-assets"></div>
+                  </section>
+                  <section class="franchise-panel trade-package">
+                    <div class="franchise-panel-heading"><div><p class="eyebrow">You receive</p><h2 id="trade-partner-package-title">—</h2></div><span id="trade-partner-package-count">0 assets</span></div>
+                    <div class="trade-asset-list" id="trade-partner-assets"></div>
+                  </section>
+                </div>
+
+                <section class="trade-evaluation franchise-panel" id="trade-evaluation" aria-live="polite">
+                  <div class="empty-state inline"><p class="eyebrow">League office review</p><p>Select players or picks from both sides, then evaluate the proposal.</p></div>
+                </section>
+
+                <div class="trade-lower-grid">
+                  <section class="franchise-panel trade-rules-panel">
+                    <div class="franchise-panel-heading"><div><p class="eyebrow">Advanced league settings</p><h2>Rule enforcement</h2></div><span>Saved per branch</span></div>
+                    <p>Every encoded legality gate can be disabled. Turning one off creates a house-rule universe and is shown as a warning on the proposal.</p>
+                    <form id="trade-rules-form">
+                      <div class="trade-rule-list" id="trade-rule-list"></div>
+                      <label class="trade-aggression"><span>CPU market activity</span><input id="trade-ai-aggression" type="range" min="0" max="1" step="0.05" value="0.45" /><output>45%</output></label>
+                      <button class="quiet-button full" type="submit">Save trade rules</button>
+                    </form>
+                  </section>
+
+                  <section class="franchise-panel trade-market-panel">
+                    <div class="franchise-panel-heading"><div><p class="eyebrow">Other 29 front offices</p><h2>League trade cycle</h2></div><span>Seeded market</span></div>
+                    <p>CPU teams evaluate age, present ability, upside, health, modeled salary burden, team timeline and pick value. Your team is never included.</p>
+                    <label><span>Maximum completed deals</span><select id="trade-ai-max"><option value="1">1 deal</option><option value="3" selected>Up to 3 deals</option><option value="5">Up to 5 deals</option></select></label>
+                    <button class="run-button full" id="trade-run-market" type="button"><span>Run league trade cycle</span><span>→</span></button>
+                    <div class="trade-history" id="trade-history"></div>
+                  </section>
+                </div>
+              </div>
+            </section>
+
+            <section class="franchise-development-workspace hidden" id="franchise-development-workspace">
+              <div class="development-guide-card">
+                <div>
+                  <p class="eyebrow">Player lifecycle · phase three</p>
+                  <h2>Plan a career, not a rating bump</h2>
+                  <p>
+                    Explore nonlinear growth and decline across offense,
+                    playmaking, defense, and athleticism. Official season age
+                    anchors the curve when available; every result remains a
+                    probability range rather than a scripted future.
+                  </p>
+                </div>
+                <button class="quiet-button" type="button" data-guide-topic="development">
+                  How development works
+                </button>
+              </div>
+
+              <section class="lifecycle-initialize-card hidden" id="lifecycle-initialize-card">
+                <div>
+                  <p class="eyebrow">Older save detected</p>
+                  <h2>Add lifecycle state to this timeline</h2>
+                  <p>
+                    This save predates player development. Initialization writes
+                    one auditable league event and preserves every prior revision.
+                  </p>
+                </div>
+                <button class="run-button" id="lifecycle-initialize" type="button">
+                  <span>Initialize players</span><span aria-hidden="true">→</span>
+                </button>
+              </section>
+
+              <div class="development-main-grid hidden" id="development-ready">
+                <form class="franchise-panel development-controls" id="lifecycle-projection-form">
+                  <div class="franchise-panel-heading">
+                    <div><p class="eyebrow">Development lab</p><h2>Build a scenario</h2></div>
+                    <span>Fresh seed</span>
+                  </div>
+                  <p>
+                    This projection does not alter the save. It shows how the
+                    same player may develop under your chosen opportunity,
+                    training emphasis, and injury burden.
+                  </p>
+                  <div class="development-form-fields">
+                    <label>
+                      <span>Player</span>
+                      <select id="lifecycle-player"></select>
+                    </label>
+                    <label>
+                      <span>Development focus</span>
+                      <select id="lifecycle-focus">
+                        <option value="balanced">Balanced</option>
+                        <option value="offense">Offense</option>
+                        <option value="playmaking">Playmaking</option>
+                        <option value="defense">Defense</option>
+                        <option value="athleticism">Athleticism</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Planned season minutes</span>
+                      <input id="lifecycle-minutes" type="number" min="0" max="3500" step="50" value="1800" />
+                      <small>About 2,200 is a healthy starter workload.</small>
+                    </label>
+                    <label>
+                      <span>Injury burden</span>
+                      <select id="lifecycle-injury">
+                        <option value="0">Healthy baseline</option>
+                        <option value="0.25">Managed limitations</option>
+                        <option value="0.6">Significant recurring burden</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Projection horizon</span>
+                      <select id="lifecycle-seasons">
+                        <option value="3">3 seasons</option>
+                        <option value="5" selected>5 seasons</option>
+                        <option value="8">8 seasons</option>
+                      </select>
+                    </label>
+                  </div>
+                  <button class="run-button full" type="submit">
+                    <span>Project career path</span><span aria-hidden="true">→</span>
+                  </button>
+                  <p class="fine-print">
+                    400 independent paths · a fresh reproducible seed every run.
+                  </p>
+                </form>
+
+                <section class="development-output">
+                  <div class="lifecycle-player-card" id="lifecycle-player-card"></div>
+                  <div class="franchise-panel lifecycle-result" id="lifecycle-result" aria-live="polite">
+                    <div class="empty-state inline">
+                      <p class="eyebrow">No projection yet</p>
+                      <p>Choose a player and project a career path to see uncertainty bands by season.</p>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </section>
+
+            <section class="franchise-health-workspace hidden" id="franchise-health-workspace">
+              <div class="development-guide-card">
+                <div>
+                  <p class="eyebrow">Health &amp; workload · phase four</p>
+                  <h2>Manage availability without pretending certainty</h2>
+                  <p>
+                    Track player status, minute restrictions, accumulated load,
+                    fatigue, recovery, and return expectations. These records
+                    autosave to the timeline and can directly condition Matchup Lab.
+                  </p>
+                </div>
+                <button class="quiet-button" type="button" data-guide-topic="workload">
+                  Read the health guide
+                </button>
+              </div>
+
+              <section class="lifecycle-initialize-card hidden" id="health-initialize-card">
+                <div>
+                  <p class="eyebrow">Older save detected</p>
+                  <h2>Add player health state</h2>
+                  <p>
+                    Initialization estimates a neutral workload baseline from
+                    prior-season minutes and writes one auditable league event.
+                  </p>
+                </div>
+                <button class="run-button" id="health-initialize" type="button">
+                  <span>Initialize health</span><span aria-hidden="true">→</span>
+                </button>
+              </section>
+
+              <div class="health-main-grid hidden" id="health-ready">
+                <section class="health-roster-panel franchise-panel">
+                  <div class="franchise-panel-heading">
+                    <div><p class="eyebrow">Medical room</p><h2 id="health-team-title">Team health</h2></div>
+                    <span id="health-restricted-count">—</span>
+                  </div>
+                  <div class="health-roster-list" id="health-roster-list"></div>
+                </section>
+
+                <section class="health-detail-column">
+                  <div class="health-player-summary" id="health-player-summary"></div>
+
+                  <div class="health-action-grid">
+                    <form class="franchise-panel health-form" id="health-status-form">
+                      <div class="franchise-panel-heading">
+                        <div><p class="eyebrow">Availability</p><h2>Update status</h2></div>
+                        <span>Autosaves</span>
+                      </div>
+                      <div class="development-form-fields">
+                        <label>
+                          <span>Status</span>
+                          <select id="health-status">
+                            <option value="available">Available</option>
+                            <option value="managed">Available · managed</option>
+                            <option value="questionable">Questionable</option>
+                            <option value="doubtful">Doubtful</option>
+                            <option value="out">Out</option>
+                          </select>
+                        </label>
+                        <label><span>Body area</span><input id="health-body-area" maxlength="80" placeholder="e.g. left ankle" /></label>
+                        <label><span>Minute limit</span><input id="health-minute-limit" type="number" min="0" max="48" step="1" placeholder="No limit" /></label>
+                        <label><span>Expected return</span><input id="health-return-date" type="date" /></label>
+                        <label><span>Context</span><input id="health-detail" maxlength="240" placeholder="Optional scenario note" /></label>
+                      </div>
+                      <button class="run-button full" type="submit"><span>Save availability</span><span aria-hidden="true">→</span></button>
+                    </form>
+
+                    <form class="franchise-panel health-form" id="health-workload-form">
+                      <div class="franchise-panel-heading">
+                        <div><p class="eyebrow">External load</p><h2>Record a session</h2></div>
+                        <span>League date</span>
+                      </div>
+                      <div class="development-form-fields">
+                        <label>
+                          <span>Session</span>
+                          <select id="health-session-kind">
+                            <option value="game">Game</option>
+                            <option value="practice">Practice</option>
+                            <option value="conditioning">Conditioning</option>
+                            <option value="rehab">Rehabilitation</option>
+                          </select>
+                        </label>
+                        <label><span>Minutes</span><input id="health-session-minutes" type="number" min="0" max="80" step="1" value="32" /></label>
+                        <label>
+                          <span>Intensity</span>
+                          <select id="health-session-intensity">
+                            <option value="0.5">Light · 0.5×</option>
+                            <option value="0.8">Moderate · 0.8×</option>
+                            <option value="1" selected>Game baseline · 1.0×</option>
+                            <option value="1.25">High · 1.25×</option>
+                            <option value="1.5">Very high · 1.5×</option>
+                          </select>
+                        </label>
+                      </div>
+                      <button class="run-button full" type="submit"><span>Record workload</span><span aria-hidden="true">→</span></button>
+                      <p class="fine-print">Advancing the league date decays fatigue and load automatically; medical status never auto-clears.</p>
+                    </form>
+                  </div>
+                </section>
+              </div>
+            </section>
+
+            <section class="franchise-health-workspace hidden" id="franchise-chemistry-workspace">
+              <div class="development-guide-card">
+                <div><p class="eyebrow">Chemistry &amp; coaching · phase five</p><h2>Build a system players can share</h2><p>Shape team cohesion, role clarity, trust, familiarity, morale, tactical identity, pace, and rotation philosophy. Effects are deliberately bounded and can condition Matchup Lab.</p></div>
+                <button class="quiet-button" type="button" data-guide-topic="chemistry">Read the system guide</button>
+              </div>
+              <section class="lifecycle-initialize-card hidden" id="environment-initialize-card">
+                <div><p class="eyebrow">Older save detected</p><h2>Add team environment state</h2><p>Creates neutral, explicitly unobserved priors for all 30 teams without inventing coach identities.</p></div>
+                <button class="run-button" id="environment-initialize" type="button"><span>Initialize environment</span><span>→</span></button>
+              </section>
+              <div class="chemistry-main-grid hidden" id="environment-ready">
+                <section class="chemistry-score-card" id="chemistry-score-card"></section>
+                <form class="franchise-panel health-form" id="chemistry-form">
+                  <div class="franchise-panel-heading"><div><p class="eyebrow">Team pulse</p><h2>Assess the room</h2></div><span>Scenario inputs</span></div>
+                  <div class="chemistry-slider-grid">
+                    <label><span>Cohesion</span><input id="chemistry-cohesion" type="range" min="0" max="100" /><output></output></label>
+                    <label><span>Role clarity</span><input id="chemistry-roles" type="range" min="0" max="100" /><output></output></label>
+                    <label><span>Trust</span><input id="chemistry-trust" type="range" min="0" max="100" /><output></output></label>
+                    <label><span>System familiarity</span><input id="chemistry-system" type="range" min="0" max="100" /><output></output></label>
+                    <label><span>Morale</span><input id="chemistry-morale" type="range" min="0" max="100" /><output></output></label>
+                  </div>
+                  <button class="run-button full" type="submit"><span>Save team assessment</span><span>→</span></button>
+                </form>
+                <form class="franchise-panel health-form" id="coaching-form">
+                  <div class="franchise-panel-heading"><div><p class="eyebrow">Bench identity</p><h2>Set the coaching plan</h2></div><span>Bounded effects</span></div>
+                  <div class="development-form-fields">
+                    <label><span>Profile label</span><input id="coach-name" maxlength="80" value="My coaching staff" /></label>
+                    <label><span>Offensive system</span><select id="coach-offense"><option value="balanced">Balanced</option><option value="motion">Motion</option><option value="pace_space">Pace & space</option><option value="inside_out">Inside-out</option><option value="heliocentric">Heliocentric</option></select></label>
+                    <label><span>Defensive system</span><select id="coach-defense"><option value="balanced">Balanced</option><option value="switch">Switch</option><option value="drop">Drop</option><option value="zone">Zone</option><option value="perimeter_pressure">Perimeter pressure</option></select></label>
+                    <label><span>Pace emphasis</span><select id="coach-pace"><option value="-1">Deliberate</option><option value="0" selected>Neutral</option><option value="1">Push pace</option></select></label>
+                    <label><span>Rotation depth</span><input id="coach-depth" type="number" min="8" max="12" value="10" /></label>
+                    <label><span>Development priority</span><select id="coach-development"><option value="balanced">Balanced</option><option value="veterans">Veterans</option><option value="prospects">Prospects</option><option value="performance">Win now</option></select></label>
+                    <label><span>Adaptability</span><input id="coach-adaptability" type="number" min="0" max="100" value="50" /></label>
+                  </div>
+                  <button class="run-button full" type="submit"><span>Save coaching plan</span><span>→</span></button>
+                </form>
+                <form class="franchise-panel chemistry-session-form" id="chemistry-session-form">
+                  <div><p class="eyebrow">Shared work</p><h2>Run a team session</h2><p>Sessions gradually improve one part of the environment with diminishing returns.</p></div>
+                  <select id="chemistry-session-emphasis"><option value="cohesion">Cohesion</option><option value="roles">Role clarity</option><option value="system">System installation</option><option value="recovery">Recovery & morale</option></select>
+                  <select id="chemistry-session-intensity"><option value="0.5">Light</option><option value="1" selected>Standard</option><option value="1.5">Intensive</option></select>
+                  <button class="run-button" type="submit"><span>Record session</span><span>→</span></button>
+                </form>
+              </div>
+            </section>
+
+            <section class="franchise-health-workspace hidden" id="franchise-scouting-workspace">
+              <div class="development-guide-card">
+                <div>
+                  <p class="eyebrow">Player database &amp; draft scouting · phase six</p>
+                  <h2>Exact NBA ratings. Uncertain prospects.</h2>
+                  <p>Established players receive complete 25–99 ratings from current performance and spatial evidence. Scouting uncertainty is reserved for future draft classes.</p>
+                </div>
+                <button class="quiet-button" type="button" data-guide-topic="scouting">How scouting works</button>
+              </div>
+              <section class="lifecycle-initialize-card hidden" id="scouting-initialize-card">
+                <div>
+                  <p class="eyebrow">Older save detected</p>
+                  <h2>Prepare future draft scouting</h2>
+                  <p>Adds the automatic department and prospect-report ledger needed by future draft classes. Current NBA player ratings remain exact either way.</p>
+                </div>
+                <button class="run-button" id="scouting-initialize" type="button"><span>Prepare draft scouting</span><span>→</span></button>
+              </section>
+              <div class="scouting-workspace hidden" id="scouting-ready">
+                <section class="scouting-command-card">
+                  <div>
+                    <p class="eyebrow">Automatic department</p>
+                    <h2 id="scouting-department-title">Weekly scouting cycle</h2>
+                    <p id="scouting-department-copy">Your staff will allocate hours automatically when draft prospects enter the universe.</p>
+                  </div>
+                  <div class="scouting-command-actions">
+                    <button class="run-button" id="scouting-run-cycle" type="button"><span>Run weekly cycle</span><span>→</span></button>
+                    <details>
+                      <summary>Advanced department settings</summary>
+                      <form id="scouting-department-form">
+                        <label class="scouting-toggle"><input id="scouting-automation" type="checkbox" checked /><span>Automatic scouting enabled</span></label>
+                        <label><span>Weekly hours</span><input id="scouting-hours" type="number" min="8" max="240" step="4" value="80" /></label>
+                        <label><span>Priority</span><select id="scouting-priority"><option value="balanced">Balanced board</option><option value="draft">Draft pipeline</option><option value="trade">Trade targets</option><option value="free_agency">Free agency</option><option value="youth">Young upside</option></select></label>
+                        <label><span>Risk profile</span><select id="scouting-risk"><option value="cautious">Cautious</option><option value="balanced">Balanced</option><option value="upside">Chase upside</option></select></label>
+                        <button class="quiet-button" type="submit">Save settings</button>
+                      </form>
+                    </details>
+                  </div>
+                </section>
+                <div class="scouting-toolbar">
+                  <label><span>Search</span><input id="scouting-search" type="search" placeholder="Player name" /></label>
+                  <label><span>Team</span><select id="scouting-team-filter"><option value="">All teams</option></select></label>
+                  <label><span>Information</span><select id="scouting-confidence-filter"><option value="">All players</option><option value="known">Exact NBA rating</option><option value="low">Low-confidence prospect</option><option value="moderate">Moderate-confidence prospect</option><option value="high">High-confidence prospect</option></select></label>
+                  <span id="scouting-board-count">—</span>
+                </div>
+                <div class="scouting-main-grid">
+                  <section class="franchise-panel scouting-board-panel">
+                    <div class="franchise-panel-heading"><div><p class="eyebrow">League player database</p><h2>Exact current ratings</h2></div><span>25–99 scale</span></div>
+                    <div class="scouting-board" id="scouting-board"></div>
+                  </section>
+                  <aside class="scouting-dossier" id="scouting-dossier">
+                    <div class="empty-state inline"><p class="eyebrow">Select a player</p><p>Open a dossier to inspect uncertainty by skill and commission more observation.</p></div>
+                  </aside>
+                </div>
+              </div>
+            </section>
+
+            <section class="franchise-health-workspace hidden" id="franchise-draft-workspace">
+              <div class="development-guide-card">
+                <div>
+                  <p class="eyebrow">Draft ecosystem · phase seven</p>
+                  <h2>Build the board. Live with the uncertainty.</h2>
+                  <p>Scout a persistent 75-player class, reveal verified combine measurements, run the NBA’s 2027 3-2-1 lottery, and control every selection through two rounds.</p>
+                </div>
+                <button class="quiet-button" type="button" data-guide-topic="draft">How the draft works</button>
+              </div>
+
+              <section class="lifecycle-initialize-card" id="draft-initialize-card">
+                <div>
+                  <p class="eyebrow">2027 class</p>
+                  <h2>Create the draft universe</h2>
+                  <p>Generates one reproducible class with hidden true talent, public consensus, scouting uncertainty, development ceilings, and all 60 team-owned picks.</p>
+                </div>
+                <button class="run-button" id="draft-initialize" type="button"><span>Generate draft class</span><span>→</span></button>
+              </section>
+
+              <div class="draft-workspace hidden" id="draft-ready">
+                <section class="draft-command-card">
+                  <div>
+                    <p class="eyebrow" id="draft-status-kicker">2027 draft</p>
+                    <h2 id="draft-status-title">Class ready</h2>
+                    <p id="draft-status-copy">Public rankings are available. Your reports still contain substantial uncertainty.</p>
+                  </div>
+                  <div class="draft-command-actions">
+                    <button class="quiet-button" id="draft-combine" type="button">Run combine</button>
+                    <button class="run-button" id="draft-lottery" type="button"><span>Run 3-2-1 lottery</span><span>→</span></button>
+                  </div>
+                </section>
+
+                <div class="draft-main-grid">
+                  <section class="franchise-panel draft-board-panel">
+                    <div class="franchise-panel-heading"><div><p class="eyebrow">Your big board</p><h2>Prospect rankings</h2></div><span id="draft-board-count">75 available</span></div>
+                    <label class="draft-search"><span>Search class</span><input id="draft-search" type="search" placeholder="Name, position, school" /></label>
+                    <div class="draft-board" id="draft-board"></div>
+                  </section>
+                  <aside class="scouting-dossier draft-dossier" id="draft-dossier">
+                    <div class="empty-state inline"><p class="eyebrow">Select a prospect</p><p>Open a dossier to inspect the current belief range.</p></div>
+                  </aside>
+                </div>
+
+                <section class="franchise-panel draft-room" id="draft-room">
+                  <div class="franchise-panel-heading">
+                    <div><p class="eyebrow">Draft room</p><h2 id="draft-room-title">Lottery pending</h2></div>
+                    <span id="draft-room-progress">0 / 60 picks</span>
+                  </div>
+                  <div class="draft-on-clock" id="draft-on-clock"></div>
+                  <div class="draft-room-actions">
+                    <button class="quiet-button" id="draft-sim-to-pick" type="button">Sim to my next pick</button>
+                    <button class="run-button" id="draft-make-pick" type="button"><span>Draft selected prospect</span><span>→</span></button>
+                  </div>
+                  <div class="draft-ledger" id="draft-ledger"></div>
+                </section>
+              </div>
+            </section>
+          </section>
+        </section>
+
+        <section class="view" id="view-competition">
+          <div class="section-intro compact">
+            <div>
+              <p class="eyebrow">Long horizon</p>
+              <h1>Season and series.</h1>
+            </div>
+            <p class="intro-copy">
+              Run small round robins or a complete best-of series. Every run is
+              fresh; its seed remains attached to the completed result.
+              <button class="guide-link" type="button" data-guide-topic="competition">
+                Compare competition modes →
+              </button>
+            </p>
+          </div>
+
+          <div class="competition-grid">
+            <form class="simple-card" id="season-form">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">Round robin</p>
+                  <h2>Season simulator</h2>
+                </div>
+                <span class="index-number">01</span>
+              </div>
+              <p class="muted">Choose 2–30 teams. Two repeats gives each matchup one game at each home court.</p>
+              <div class="team-chip-grid" id="season-team-grid"></div>
+              <div class="inline-fields">
+                <label>
+                  <span>Repeats</span>
+                  <input id="season-repeats" type="number" min="1" max="4" value="2" />
+                </label>
+                <label>
+                  <span>Start date</span>
+                  <input id="season-date" type="date" value="2026-10-20" />
+                </label>
+                <div class="seed-policy compact" title="A new reproducible seed is generated when you run">
+                  <span class="seed-spark" aria-hidden="true">✦</span>
+                  <div><strong>Fresh seed</strong><small>Generated on run</small></div>
+                </div>
+              </div>
+              <button class="run-button full" type="submit">
+                <span>Simulate season</span><span aria-hidden="true">→</span>
+              </button>
+            </form>
+
+            <form class="simple-card" id="series-form">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">Playoffs</p>
+                  <h2>Series simulator</h2>
+                </div>
+                <span class="index-number">02</span>
+              </div>
+              <p class="muted">Uses a 2–2–1–1–1 home-court pattern for best-of-seven series.</p>
+              <div class="stacked-fields">
+                <label>
+                  <span>Higher seed</span>
+                  <select id="higher-seed"></select>
+                </label>
+                <label>
+                  <span>Lower seed</span>
+                  <select id="lower-seed"></select>
+                </label>
+                <div class="inline-fields two">
+                  <label>
+                    <span>Format</span>
+                    <select id="best-of">
+                      <option value="3">Best of 3</option>
+                      <option value="5">Best of 5</option>
+                      <option value="7" selected>Best of 7</option>
+                    </select>
+                  </label>
+                  <div class="seed-policy compact" title="A new reproducible seed is generated when you run">
+                    <span class="seed-spark" aria-hidden="true">✦</span>
+                    <div><strong>Fresh seed</strong><small>Generated on run</small></div>
+                  </div>
+                </div>
+              </div>
+              <button class="run-button full" type="submit">
+                <span>Simulate series</span><span aria-hidden="true">→</span>
+              </button>
+            </form>
+          </div>
+
+          <section class="wide-result" id="competition-result" aria-live="polite">
+            <div class="empty-state inline">
+              <p class="eyebrow">Competition results</p>
+              <p>Your standings or series ledger will appear here.</p>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-health">
+          <div class="section-intro compact">
+            <div>
+              <p class="eyebrow">Calibration</p>
+              <h1>Model health.</h1>
+            </div>
+            <p class="intro-copy">
+              Compare simulated league ecology with the bundled 2023–24 source
+              totals. This is a fidelity check, not a claim of predictive edge.
+              <button class="guide-link" type="button" data-guide-topic="health">
+                Read model results correctly →
+              </button>
+            </p>
+          </div>
+
+          <div class="health-layout">
+            <div class="health-controls">
+            <form class="health-control" id="validation-form">
+              <div>
+                <p class="eyebrow">Release gate</p>
+                <h2>League-stat audit</h2>
+                <p class="muted">
+                  Evaluates points, shooting, assists, turnovers, defensive events,
+                  and fouls across shuffled league matchups.
+                </p>
+              </div>
+              <div class="inline-fields two">
+                <label>
+                  <span>Games / matchup</span>
+                  <input id="validation-games" type="number" min="1" max="20" value="5" />
+                </label>
+                <label>
+                  <span>Seed</span>
+                  <input id="validation-seed" type="number" min="0" value="2026" />
+                </label>
+              </div>
+              <button class="run-button full" type="submit">
+                <span>Run audit</span><span aria-hidden="true">→</span>
+              </button>
+              <p class="fine-print">Five games per matchup runs the documented 75-game release-gate sample.</p>
+            </form>
+            <form class="health-control" id="backtest-form">
+              <div>
+                <p class="eyebrow">Rolling origin</p>
+                <h2>Historical backtest</h2>
+                <p class="muted">
+                  Predicts each game before applying its result, then compares
+                  Bayesian ratings with Elo and league-average baselines.
+                </p>
+              </div>
+              <div class="inline-fields two">
+                <label>
+                  <span>Evaluation start</span>
+                  <input id="backtest-start" type="date" value="2025-10-21" />
+                </label>
+                <label>
+                  <span>Evaluation end</span>
+                  <input id="backtest-end" type="date" value="2026-04-12" />
+                </label>
+              </div>
+              <button class="run-button full" type="submit">
+                <span>Run backtest</span><span aria-hidden="true">→</span>
+              </button>
+              <p class="fine-print" id="data-inventory">Loading historical inventory…</p>
+            </form>
+            </div>
+            <section class="health-result" id="health-result" aria-live="polite">
+              <div class="empty-state inline">
+                <p class="eyebrow">No audit in this session</p>
+                <p>The operational-profile run passed at 3.03% mean error.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <span>NBA Sim · local research interface</span>
+        <span>Fresh seeds · reproducible results · point-in-time aware</span>
+      </footer>
+    </div>
+
+    <div class="guide-overlay hidden" id="guide-overlay" aria-hidden="true">
+      <button class="guide-scrim" type="button" aria-label="Close guide"></button>
+      <aside class="guide-drawer" role="dialog" aria-modal="true" aria-labelledby="guide-title">
+        <header class="guide-drawer-header">
+          <div>
+            <p class="eyebrow">NBA Sim handbook</p>
+            <h2 id="guide-title">Start here</h2>
+          </div>
+          <button class="guide-close" id="guide-close" type="button" aria-label="Close guide">×</button>
+        </header>
+        <nav class="guide-topic-nav" aria-label="Guide topics">
+          <button class="active" data-guide-nav="start" type="button">Start</button>
+          <button data-guide-nav="matchup" type="button">Matchup</button>
+          <button data-guide-nav="gameday" type="button">Game Day</button>
+          <button data-guide-nav="league" type="button">League</button>
+          <button data-guide-nav="franchise" type="button">Franchise</button>
+          <button data-guide-nav="cba" type="button">Cap &amp; CBA</button>
+          <button data-guide-nav="trades" type="button">Trades</button>
+          <button data-guide-nav="development" type="button">Development</button>
+          <button data-guide-nav="workload" type="button">Health</button>
+          <button data-guide-nav="chemistry" type="button">Chemistry</button>
+          <button data-guide-nav="scouting" type="button">Scouting</button>
+          <button data-guide-nav="draft" type="button">Draft</button>
+          <button data-guide-nav="competition" type="button">Modes</button>
+          <button data-guide-nav="health" type="button">Model Health</button>
+          <button data-guide-nav="glossary" type="button">Glossary</button>
+        </nav>
+        <article class="guide-content" id="guide-content"></article>
+      </aside>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
