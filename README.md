@@ -193,7 +193,7 @@ different compatible profile database.
 
 ## Validation boundaries
 
-The test suite contains 130 deterministic tests covering event replay, clock and
+The test suite contains 132 deterministic tests covering event replay, clock and
 box-score invariants, reproducibility, schedules, probabilistic scoring,
 point-in-time data, spatial datasets, franchise replay, and dashboard services.
 
