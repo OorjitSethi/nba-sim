@@ -27,6 +27,37 @@ class DashboardServiceTests(unittest.TestCase):
         )
         self.assertEqual(len(utah["roster"]), 10)
 
+    def test_hosted_demo_reports_and_enforces_its_trial_cap(self) -> None:
+        hosted = DashboardService(
+            self.service.database_path,
+            warehouse_path=Path(self.temporary.name) / "hosted.sqlite",
+            deployment_mode="vercel-demo",
+            matchup_trial_limit=25,
+        )
+        metadata = hosted.metadata()
+        self.assertEqual(metadata["deployment"]["mode"], "vercel-demo")
+        self.assertFalse(metadata["deployment"]["persistent_storage"])
+        self.assertEqual(metadata["deployment"]["matchup_trial_limit"], 25)
+        with self.assertRaisesRegex(ValueError, r"trials must be 25\.\.25"):
+            hosted.run_matchup(
+                {
+                    "mode": "hybrid",
+                    "home": "UTA",
+                    "away": "MEM",
+                    "trials": 26,
+                }
+            )
+
+    def test_vercel_public_assets_match_the_local_dashboard(self) -> None:
+        root = Path(__file__).parents[1]
+        source = root / "src" / "nba_sim" / "web_assets"
+        public = root / "public"
+        for filename in ("index.html", "app.js", "styles.css"):
+            self.assertEqual(
+                (public / filename).read_bytes(),
+                (source / filename).read_bytes(),
+            )
+
     def test_dashboard_uses_automatic_seed_controls(self) -> None:
         assets = Path(__file__).parents[1] / "src" / "nba_sim" / "web_assets"
         html = (assets / "index.html").read_text(encoding="utf-8")

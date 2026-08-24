@@ -8,6 +8,7 @@ htmlcov/
 build/
 dist/
 .venv/
+.vercel/
 .env
 .env.*
 artifacts/

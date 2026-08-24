@@ -3,6 +3,13 @@
 [![tests](https://github.com/OorjitSethi/nba-sim/actions/workflows/tests.yml/badge.svg)](https://github.com/OorjitSethi/nba-sim/actions/workflows/tests.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB.svg)](https://www.python.org/)
 
+**[Launch the hosted Matchup Lab →](https://nba-sim-three.vercel.app/)**
+
+The public demo runs deterministic fictional stat profiles and fixes hybrid
+runs at 25 trials for free-host reliability. It is stateless; the full
+league, franchise, competition, and validation workspaces remain available in
+the local application.
+
 NBA Sim is a reproducible basketball simulation and forecasting engine built
 around possessions, players, and events—not a box-score allocator. A single
 seeded event stream drives the clock, score, play-by-play, and every player box
@@ -10,7 +17,7 @@ score, making a game replayable and its outputs internally consistent.
 
 The project combines a rules-aware game engine, Monte Carlo and season
 simulation, point-in-time forecasting, franchise state, and an experimental
-multi-agent spatial layer. It also includes a localhost dashboard for exploring
+multi-agent spatial layer. It also includes a dashboard for exploring
 matchups, availability scenarios, seasons, playoff series, and franchise
 decisions.
 
@@ -26,7 +33,7 @@ decisions.
 
 ## At a glance
 
-- **130 deterministic tests** cover event replay, clocks, box scores,
+- **132 deterministic tests** cover event replay, clocks, box scores,
   point-in-time data, spatial datasets, franchise state, and dashboard services.
 - **0.5955 log loss** on a frozen 1,230-game holdout, compared with **0.6023**
   for a margin-aware Elo baseline; the paired-bootstrap interval for the

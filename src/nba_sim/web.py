@@ -178,8 +178,14 @@ class DashboardService:
         database_path: str | Path,
         *,
         warehouse_path: str | Path | None = None,
+        deployment_mode: str = "local",
+        matchup_trial_limit: int = 10_000,
     ) -> None:
+        if matchup_trial_limit < 25:
+            raise ValueError("matchup_trial_limit must be at least 25")
         self.database_path = Path(database_path)
+        self.deployment_mode = deployment_mode
+        self.matchup_trial_limit = matchup_trial_limit
         self.repository = LegacySQLiteRepository(self.database_path)
         self.warehouse = PointInTimeWarehouse(
             warehouse_path or Path.cwd() / "data" / "nba_sim.sqlite"
@@ -239,7 +245,12 @@ class DashboardService:
                 "home": "UTA" if "UTA" in self._team_cache else teams[0]["abbreviation"],
                 "away": "MEM" if "MEM" in self._team_cache else teams[1]["abbreviation"],
                 "seed": 7,
-                "trials": 100,
+                "trials": min(100, self.matchup_trial_limit),
+            },
+            "deployment": {
+                "mode": self.deployment_mode,
+                "matchup_trial_limit": self.matchup_trial_limit,
+                "persistent_storage": self.deployment_mode == "local",
             },
             "data_season": (
                 f"{self.profile_repository.season} roster"
@@ -503,7 +514,7 @@ class DashboardService:
             "trials",
             default=100,
             minimum=25 if mode == "hybrid" else 1,
-            maximum=10_000,
+            maximum=self.matchup_trial_limit,
         )
         workers = _integer(payload, "workers", default=1, minimum=0, maximum=16)
         if mode == "monte_carlo":
