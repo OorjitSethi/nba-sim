@@ -18,6 +18,36 @@ decisions.
 > by the NBA or its teams. The repository does not include downloaded NBA data,
 > licensed tracking data, or trained spatial-model weights.
 
+<p align="center">
+  <img src="docs/assets/dashboard-hero.jpg" alt="NBA Sim Matchup Lab showing a 100-trial hybrid simulation and its score distribution" width="100%">
+</p>
+
+<p align="center"><sub>The local Matchup Lab exposes rotations, scenarios, seeds, uncertainty, and the full output distribution.</sub></p>
+
+## At a glance
+
+- **130 deterministic tests** cover event replay, clocks, box scores,
+  point-in-time data, spatial datasets, franchise state, and dashboard services.
+- **0.5955 log loss** on a frozen 1,230-game holdout, compared with **0.6023**
+  for a margin-aware Elo baseline; the paired-bootstrap interval for the
+  difference was `[-0.0133, -0.0007]`.
+- **One event stream** drives possession outcomes, scores, play-by-play, and
+  player box scores, so a fixed seed can be replayed and audited.
+- **Ten players plus the ball** are represented jointly in the experimental
+  spatial layer, with court-bounded rollouts and leakage-safe datasets.
+
+Try the fictional demonstration profile locally:
+
+```bash
+git clone https://github.com/OorjitSethi/nba-sim.git
+cd nba-sim
+python -m venv .venv && source .venv/bin/activate
+python -m pip install -e .
+nba-sim-demo && nba-sim-web
+```
+
+Then open `http://127.0.0.1:8765`.
+
 ## Why it is different
 
 - **Possession-level coherence.** Scores, events, fouls, substitutions, and box
