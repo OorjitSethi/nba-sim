@@ -123,7 +123,7 @@ class TradingPhaseTests(unittest.TestCase):
     def test_trade_finder_can_target_an_asset_and_cpu_can_counter(self) -> None:
         available_target = next(
             item for item in self.board["players"]
-            if item["team"] == "BOS" and item["market_status"] == "available"
+            if item["team"] == "BOS" and item["market_status"] != "core"
         )
         finder = self.service.find_franchise_trades(
             {
