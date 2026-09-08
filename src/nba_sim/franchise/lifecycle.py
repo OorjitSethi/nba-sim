@@ -266,6 +266,28 @@ def lifecycle_stage(age: float | None) -> str:
     return "late_career"
 
 
+def advance_lifecycle_record(
+    record: PlayerLifecycleRecord,
+    *,
+    seed: int,
+    planned_minutes: float,
+    injury_burden: float,
+    focus: str = "balanced",
+) -> PlayerLifecycleRecord:
+    """Commit one seeded career year using the projection model."""
+    config = LifecycleProjectionConfig(
+        focus=focus,
+        planned_minutes=max(0.0, min(3_500.0, planned_minutes)),
+        injury_burden=max(0.0, min(1.0, injury_burden)),
+        seasons=1,
+        paths=50,
+    )
+    rng = RandomStreamFactory(seed).generator(
+        f"lifecycle-commit:{record.player_id}:{record.as_of_season}"
+    )
+    return _advance_one_season(record, rng=rng, config=config)
+
+
 def _initial_attributes(
     player: PlayerRecord,
     profile: PlayerProfile | None,

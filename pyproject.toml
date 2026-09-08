@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nba-sim"
 version = "0.1.0"
-description = "A reproducible, event-sourced basketball simulation and forecasting engine."
+description = "A calibrated, event-sourced, multi-agent NBA simulation engine."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -33,7 +33,7 @@ nba-sim-data = "nba_sim.data_cli:main"
 nba-sim-demo = "nba_sim.demo:main"
 
 [tool.setuptools.package-data]
-nba_sim = ["web_assets/*.html", "web_assets/*.css", "web_assets/*.js"]
+nba_sim = ["web_assets/*.html", "web_assets/*.css", "web_assets/*.js", "web_assets/*.svg"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

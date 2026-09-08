@@ -244,6 +244,89 @@ class PlayerLifecycleRecord:
 
 
 @dataclass(frozen=True)
+class CareerDecisionRecord:
+    decision_id: str
+    player_id: int
+    season: str
+    decided_on: date
+    outcome: str
+    reason: str
+    last_team: str
+    age: float | None
+    overall: float
+    probability: float
+    random_draw: float
+    season_games: int
+    season_minutes: float
+    injury_burden: float
+    model_version: str
+
+    def __post_init__(self) -> None:
+        _required(self.decision_id, "career decision ID")
+        if self.player_id <= 0:
+            raise ValueError("career decision player_id must be positive")
+        _required(self.season, "career decision season")
+        if self.outcome not in {
+            "continued",
+            "retired",
+            "returned",
+            "remained_retired",
+        }:
+            raise ValueError("invalid career decision outcome")
+        _required(self.reason, "career decision reason")
+        object.__setattr__(self, "last_team", _required(self.last_team, "last team").upper())
+        if self.age is not None and not 15 <= self.age <= 50:
+            raise ValueError("career decision age must be between 15 and 50")
+        if not 0 <= self.overall <= 100:
+            raise ValueError("career decision overall must be between 0 and 100")
+        for name in ("probability", "random_draw", "injury_burden"):
+            if not 0 <= float(getattr(self, name)) <= 1:
+                raise ValueError(f"{name} must be between 0 and 1")
+        if self.season_games < 0 or self.season_minutes < 0:
+            raise ValueError("career decision workload cannot be negative")
+        _required(self.model_version, "career decision model version")
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "decision_id": self.decision_id,
+            "player_id": self.player_id,
+            "season": self.season,
+            "decided_on": self.decided_on.isoformat(),
+            "outcome": self.outcome,
+            "reason": self.reason,
+            "last_team": self.last_team,
+            "age": round(self.age, 2) if self.age is not None else None,
+            "overall": round(self.overall, 3),
+            "probability": round(self.probability, 8),
+            "random_draw": round(self.random_draw, 8),
+            "season_games": self.season_games,
+            "season_minutes": round(self.season_minutes, 2),
+            "injury_burden": round(self.injury_burden, 6),
+            "model_version": self.model_version,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> "CareerDecisionRecord":
+        return cls(
+            decision_id=str(value["decision_id"]),
+            player_id=int(value["player_id"]),
+            season=str(value["season"]),
+            decided_on=date.fromisoformat(str(value["decided_on"])),
+            outcome=str(value["outcome"]),
+            reason=str(value["reason"]),
+            last_team=str(value["last_team"]),
+            age=float(value["age"]) if value.get("age") is not None else None,
+            overall=float(value["overall"]),
+            probability=float(value["probability"]),
+            random_draw=float(value["random_draw"]),
+            season_games=int(value.get("season_games", 0)),
+            season_minutes=float(value.get("season_minutes", 0.0)),
+            injury_burden=float(value.get("injury_burden", 0.0)),
+            model_version=str(value.get("model_version", "legacy")),
+        )
+
+
+@dataclass(frozen=True)
 class PlayerHealthRecord:
     player_id: int
     as_of_date: date
@@ -714,6 +797,325 @@ class StaffRecord:
 
 
 @dataclass(frozen=True)
+class RotationAssignmentRecord:
+    player_id: int
+    depth_slot: int
+    role: str
+    designation: str
+    target_minutes: float
+    starter: bool
+    role_promise: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.player_id <= 0:
+            raise ValueError("rotation player_id must be positive")
+        if not 1 <= self.depth_slot <= 30:
+            raise ValueError("rotation depth_slot must be between 1 and 30")
+        if self.role not in {
+            "franchise", "star", "starter", "sixth", "rotation", "bench", "development"
+        }:
+            raise ValueError("invalid rotation role")
+        if self.designation not in {"standard", "two_way", "g_league", "inactive"}:
+            raise ValueError("invalid roster designation")
+        if not 0 <= self.target_minutes <= 48:
+            raise ValueError("rotation target minutes must be between 0 and 48")
+        if self.role_promise is not None and self.role_promise not in {
+            "star", "starter", "sixth", "rotation", "development"
+        }:
+            raise ValueError("invalid role promise")
+        if self.starter and (
+            self.designation in {"g_league", "inactive"} or self.target_minutes <= 0
+        ):
+            raise ValueError("an unavailable player cannot start")
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "player_id": self.player_id,
+            "depth_slot": self.depth_slot,
+            "role": self.role,
+            "designation": self.designation,
+            "target_minutes": round(self.target_minutes, 3),
+            "starter": self.starter,
+            "role_promise": self.role_promise,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> "RotationAssignmentRecord":
+        return cls(
+            player_id=int(value["player_id"]),
+            depth_slot=int(value["depth_slot"]),
+            role=str(value["role"]),
+            designation=str(value.get("designation", "standard")),
+            target_minutes=float(value.get("target_minutes", 0)),
+            starter=bool(value.get("starter", False)),
+            role_promise=(str(value["role_promise"]) if value.get("role_promise") else None),
+        )
+
+
+@dataclass(frozen=True)
+class RosterPlanRecord:
+    team: str
+    as_of_date: date
+    delegation: str
+    objective: str
+    assignments: tuple[RotationAssignmentRecord, ...]
+    source: str
+    model_version: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "team", _required(self.team, "team").upper())
+        if self.delegation not in {"automatic", "recommend", "manual"}:
+            raise ValueError("invalid roster delegation")
+        if self.objective not in {"balanced", "win_now", "development"}:
+            raise ValueError("invalid roster objective")
+        _required(self.source, "roster plan source")
+        _required(self.model_version, "roster plan model version")
+        player_ids = [item.player_id for item in self.assignments]
+        if len(player_ids) != len(set(player_ids)):
+            raise ValueError("roster plan contains duplicate players")
+        slots = [item.depth_slot for item in self.assignments]
+        if len(slots) != len(set(slots)):
+            raise ValueError("roster plan contains duplicate depth slots")
+        available = [
+            item for item in self.assignments
+            if item.designation not in {"g_league", "inactive"}
+            and item.target_minutes > 0
+        ]
+        if len(available) >= 5 and sum(item.starter for item in available) != 5:
+            raise ValueError("roster plan must identify exactly five starters")
+        if available and abs(sum(item.target_minutes for item in available) - 240) > 0.2:
+            raise ValueError("active rotation target minutes must total 240")
+        if sum(item.designation == "two_way" for item in self.assignments) > 3:
+            raise ValueError("an NBA team can carry at most three two-way players")
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "team": self.team,
+            "as_of_date": self.as_of_date.isoformat(),
+            "delegation": self.delegation,
+            "objective": self.objective,
+            "assignments": [item.as_dict() for item in self.assignments],
+            "source": self.source,
+            "model_version": self.model_version,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> "RosterPlanRecord":
+        return cls(
+            team=str(value["team"]),
+            as_of_date=date.fromisoformat(str(value["as_of_date"])),
+            delegation=str(value.get("delegation", "recommend")),
+            objective=str(value.get("objective", "balanced")),
+            assignments=tuple(
+                RotationAssignmentRecord.from_dict(item)
+                for item in value.get("assignments", [])  # type: ignore[arg-type]
+            ),
+            source=str(value.get("source", "unknown")),
+            model_version=str(value.get("model_version", "unknown")),
+        )
+
+
+@dataclass(frozen=True)
+class GeneralManagerPlanRecord:
+    team: str
+    as_of_date: date
+    direction: str
+    strength_rank: int
+    average_age: float
+    target_wins: int
+    evaluation_horizon: int
+    automation_enabled: bool
+    job_security: float
+    ownership_patience: float
+    budget_willingness: float
+    market_size: str
+    payroll_ceiling: int
+    risk_tolerance: float
+    win_now_weight: float
+    development_weight: float
+    flexibility_weight: float
+    draft_weight: float
+    core_player_ids: tuple[int, ...]
+    trade_block_player_ids: tuple[int, ...]
+    needs: tuple[str, ...]
+    triggers: tuple[str, ...]
+    rationale: tuple[str, ...]
+    last_review_reason: str
+    model_version: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "team", _required(self.team, "team").upper())
+        if self.direction not in {"contend", "compete", "retool", "rebuild"}:
+            raise ValueError("invalid general-manager direction")
+        if not 1 <= self.strength_rank <= 30:
+            raise ValueError("strength rank must be between 1 and 30")
+        if not 15 <= self.average_age <= 45:
+            raise ValueError("average age must be between 15 and 45")
+        if not 0 <= self.target_wins <= 82:
+            raise ValueError("target wins must be between 0 and 82")
+        if not 1 <= self.evaluation_horizon <= 5:
+            raise ValueError("evaluation horizon must be between 1 and 5")
+        for name in (
+            "job_security",
+            "ownership_patience",
+            "budget_willingness",
+        ):
+            if not 0 <= float(getattr(self, name)) <= 100:
+                raise ValueError(f"{name} must be between 0 and 100")
+        if self.market_size not in {"small", "medium", "large"}:
+            raise ValueError("invalid market size")
+        if self.payroll_ceiling <= 0:
+            raise ValueError("payroll ceiling must be positive")
+        if not 0 <= self.risk_tolerance <= 1:
+            raise ValueError("risk tolerance must be between 0 and 1")
+        priorities = (
+            self.win_now_weight,
+            self.development_weight,
+            self.flexibility_weight,
+            self.draft_weight,
+        )
+        if any(not 0 <= value <= 1 for value in priorities):
+            raise ValueError("general-manager priorities must be between 0 and 1")
+        if abs(sum(priorities) - 1.0) > 0.002:
+            raise ValueError("general-manager priorities must sum to one")
+        if len(self.core_player_ids) != len(set(self.core_player_ids)):
+            raise ValueError("general-manager core contains duplicate players")
+        if len(self.trade_block_player_ids) != len(set(self.trade_block_player_ids)):
+            raise ValueError("general-manager trade block contains duplicate players")
+        if set(self.core_player_ids) & set(self.trade_block_player_ids):
+            raise ValueError("a player cannot be core and on the trade block")
+        _required(self.last_review_reason, "general-manager review reason")
+        _required(self.model_version, "general-manager model version")
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "team": self.team,
+            "as_of_date": self.as_of_date.isoformat(),
+            "direction": self.direction,
+            "strength_rank": self.strength_rank,
+            "average_age": round(self.average_age, 3),
+            "target_wins": self.target_wins,
+            "evaluation_horizon": self.evaluation_horizon,
+            "automation_enabled": self.automation_enabled,
+            "job_security": round(self.job_security, 3),
+            "ownership_patience": round(self.ownership_patience, 3),
+            "budget_willingness": round(self.budget_willingness, 3),
+            "market_size": self.market_size,
+            "payroll_ceiling": self.payroll_ceiling,
+            "risk_tolerance": round(self.risk_tolerance, 5),
+            "priorities": {
+                "win_now": round(self.win_now_weight, 6),
+                "development": round(self.development_weight, 6),
+                "flexibility": round(self.flexibility_weight, 6),
+                "draft_capital": round(self.draft_weight, 6),
+            },
+            "core_player_ids": list(self.core_player_ids),
+            "trade_block_player_ids": list(self.trade_block_player_ids),
+            "needs": list(self.needs),
+            "triggers": list(self.triggers),
+            "rationale": list(self.rationale),
+            "last_review_reason": self.last_review_reason,
+            "model_version": self.model_version,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> "GeneralManagerPlanRecord":
+        priorities = value.get("priorities", {})
+        if not isinstance(priorities, Mapping):
+            raise ValueError("general-manager priorities must be an object")
+        return cls(
+            team=str(value["team"]),
+            as_of_date=date.fromisoformat(str(value["as_of_date"])),
+            direction=str(value["direction"]),
+            strength_rank=int(value["strength_rank"]),
+            average_age=float(value["average_age"]),
+            target_wins=int(value["target_wins"]),
+            evaluation_horizon=int(value.get("evaluation_horizon", 3)),
+            automation_enabled=bool(value.get("automation_enabled", True)),
+            job_security=float(value["job_security"]),
+            ownership_patience=float(value["ownership_patience"]),
+            budget_willingness=float(value["budget_willingness"]),
+            market_size=str(value["market_size"]),
+            payroll_ceiling=int(value["payroll_ceiling"]),
+            risk_tolerance=float(value["risk_tolerance"]),
+            win_now_weight=float(priorities.get("win_now", 0.25)),
+            development_weight=float(priorities.get("development", 0.25)),
+            flexibility_weight=float(priorities.get("flexibility", 0.25)),
+            draft_weight=float(priorities.get("draft_capital", 0.25)),
+            core_player_ids=tuple(int(item) for item in value.get("core_player_ids", [])),  # type: ignore[arg-type]
+            trade_block_player_ids=tuple(int(item) for item in value.get("trade_block_player_ids", [])),  # type: ignore[arg-type]
+            needs=tuple(str(item) for item in value.get("needs", [])),  # type: ignore[arg-type]
+            triggers=tuple(str(item) for item in value.get("triggers", [])),  # type: ignore[arg-type]
+            rationale=tuple(str(item) for item in value.get("rationale", [])),  # type: ignore[arg-type]
+            last_review_reason=str(value.get("last_review_reason", "league review")),
+            model_version=str(value.get("model_version", "unknown")),
+        )
+
+
+@dataclass(frozen=True)
+class FranchiseExperienceRecord:
+    configured_on: date
+    preset: str
+    difficulty: str
+    contextual_help: bool
+    confirm_consequential_moves: bool
+    show_advanced_by_default: bool
+    onboarding_complete: bool
+    model_version: str
+
+    def __post_init__(self) -> None:
+        if self.preset not in {"guided", "balanced", "full_control"}:
+            raise ValueError("invalid franchise experience preset")
+        if self.difficulty not in {"rookie", "pro", "expert"}:
+            raise ValueError("invalid franchise difficulty")
+        _required(self.model_version, "franchise experience model version")
+
+    @property
+    def negotiation_tolerance(self) -> float:
+        return {"rookie": 1.18, "pro": 1.0, "expert": 0.84}[self.difficulty]
+
+    @property
+    def information_level(self) -> str:
+        return {
+            "rookie": "fully_explained",
+            "pro": "standard",
+            "expert": "front_office_fog",
+        }[self.difficulty]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "configured_on": self.configured_on.isoformat(),
+            "preset": self.preset,
+            "difficulty": self.difficulty,
+            "contextual_help": self.contextual_help,
+            "confirm_consequential_moves": self.confirm_consequential_moves,
+            "show_advanced_by_default": self.show_advanced_by_default,
+            "onboarding_complete": self.onboarding_complete,
+            "negotiation_tolerance": self.negotiation_tolerance,
+            "information_level": self.information_level,
+            "ratings_modifier": 0,
+            "model_version": self.model_version,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> "FranchiseExperienceRecord":
+        return cls(
+            configured_on=date.fromisoformat(str(value["configured_on"])),
+            preset=str(value.get("preset", "guided")),
+            difficulty=str(value.get("difficulty", "pro")),
+            contextual_help=bool(value.get("contextual_help", True)),
+            confirm_consequential_moves=bool(
+                value.get("confirm_consequential_moves", True)
+            ),
+            show_advanced_by_default=bool(
+                value.get("show_advanced_by_default", False)
+            ),
+            onboarding_complete=bool(value.get("onboarding_complete", False)),
+            model_version=str(value.get("model_version", "unknown")),
+        )
+
+
+@dataclass(frozen=True)
 class ContractYear:
     season: str
     salary: int
@@ -749,6 +1151,8 @@ class ContractRecord:
     years: tuple[ContractYear, ...]
     status: str
     source: str
+    rights: str | None = None
+    contract_kind: str = "standard"
 
     def __post_init__(self) -> None:
         _required(self.contract_id, "contract_id")
@@ -759,9 +1163,10 @@ class ContractRecord:
             raise ValueError("contract must contain at least one salary year")
         _required(self.status, "contract status")
         _required(self.source, "contract source")
+        _required(self.contract_kind, "contract kind")
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        value: dict[str, object] = {
             "contract_id": self.contract_id,
             "player_id": self.player_id,
             "team": self.team,
@@ -770,6 +1175,11 @@ class ContractRecord:
             "status": self.status,
             "source": self.source,
         }
+        if self.rights is not None:
+            value["rights"] = self.rights
+        if self.contract_kind != "standard":
+            value["contract_kind"] = self.contract_kind
+        return value
 
     @classmethod
     def from_dict(cls, value: Mapping[str, object]) -> "ContractRecord":
@@ -784,6 +1194,8 @@ class ContractRecord:
             ),
             status=str(value["status"]),
             source=str(value["source"]),
+            rights=str(value["rights"]) if value.get("rights") else None,
+            contract_kind=str(value.get("contract_kind", "standard")),
         )
 
 
@@ -890,6 +1302,11 @@ class InjuryRecord:
     started_on: date
     expected_return: date | None
     source: str
+    severity: str = "unknown"
+    body_area: str = ""
+    resolved_on: date | None = None
+    games_missed: int = 0
+    model_version: str = "legacy"
 
     def __post_init__(self) -> None:
         _required(self.injury_id, "injury_id")
@@ -898,8 +1315,21 @@ class InjuryRecord:
         object.__setattr__(self, "team", _required(self.team, "team").upper())
         _required(self.status, "injury status")
         _required(self.source, "injury source")
+        if self.status not in {
+            "active", "recovering", "cleared", "unknown",
+            "out", "questionable", "probable",
+        }:
+            raise ValueError("invalid injury status")
+        if self.severity not in {
+            "day_to_day", "minor", "moderate", "major", "severe", "unknown"
+        }:
+            raise ValueError("invalid injury severity")
+        if self.games_missed < 0:
+            raise ValueError("injury games missed cannot be negative")
         if self.expected_return is not None and self.expected_return < self.started_on:
             raise ValueError("expected return cannot precede injury start")
+        if self.resolved_on is not None and self.resolved_on < self.started_on:
+            raise ValueError("injury resolution cannot precede injury start")
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -915,6 +1345,11 @@ class InjuryRecord:
                 else None
             ),
             "source": self.source,
+            "severity": self.severity,
+            "body_area": self.body_area,
+            "resolved_on": self.resolved_on.isoformat() if self.resolved_on else None,
+            "games_missed": self.games_missed,
+            "model_version": self.model_version,
         }
 
     @classmethod
@@ -932,6 +1367,14 @@ class InjuryRecord:
                 else None
             ),
             source=str(value["source"]),
+            severity=str(value.get("severity", "unknown")),
+            body_area=str(value.get("body_area", "")),
+            resolved_on=(
+                date.fromisoformat(str(value["resolved_on"]))
+                if value.get("resolved_on") else None
+            ),
+            games_missed=int(value.get("games_missed", 0)),
+            model_version=str(value.get("model_version", "legacy")),
         )
 
 

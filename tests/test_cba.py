@@ -8,10 +8,20 @@ from nba_sim.franchise.cba import (
     TransactionAction,
     cap_position,
     evaluate_transaction,
+    rules_for_season,
 )
 
 
 class CBAEngineTests(unittest.TestCase):
+    def test_future_rules_roll_every_threshold_and_exception_together(self) -> None:
+        future = rules_for_season("2031-32")
+        self.assertEqual(future.season, "2031-32")
+        self.assertGreater(future.salary_cap, CBA_2026_27.salary_cap)
+        self.assertGreater(future.minimum_team_salary, CBA_2026_27.minimum_team_salary)
+        self.assertGreater(future.second_apron, CBA_2026_27.second_apron)
+        self.assertGreater(future.non_taxpayer_mle, CBA_2026_27.non_taxpayer_mle)
+        self.assertIn("projected", future.rules_version)
+
     def test_2026_27_official_system_levels_are_versioned(self) -> None:
         self.assertEqual(CBA_2026_27.salary_cap, 164_961_000)
         self.assertEqual(CBA_2026_27.tax_level, 200_428_000)

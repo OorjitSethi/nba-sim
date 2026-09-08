@@ -104,6 +104,17 @@ class CompetingRiskEPVModel:
         if integration_step_seconds <= 0:
             raise ValueError("integration step must be positive")
         self.integration_step_seconds = integration_step_seconds
+        # Player shot profiles and lineup membership are immutable during a
+        # game. These exact derived values were previously recomputed at every
+        # quarter-second hazard step—tens of thousands of times per game.
+        self._lineup_three_share_cache: dict[
+            tuple[int, ...],
+            tuple[tuple[PlayerProfile, ...], float],
+        ] = {}
+        self._lineup_defense_cache: dict[
+            tuple[int, ...],
+            tuple[tuple[PlayerProfile, ...], float],
+        ] = {}
 
     def hazards(
         self,
@@ -134,8 +145,8 @@ class CompetingRiskEPVModel:
             terminal_rate *= 1.0 + urgency_from_margin * urgency_from_clock
 
         turnover_share = context.ball_handler.turnover_probability
-        turnover_share += 0.012 * np.mean(
-            [max(0.0, defender.defensive_impact) for defender in context.defense]
+        turnover_share += 0.012 * self._lineup_defensive_pressure(
+            context.defense
         )
         if context.spatial is not None:
             if context.spatial.closest_defender_ft < 2.5:
@@ -253,8 +264,14 @@ class CompetingRiskEPVModel:
             + probabilities[1] * 0.10
         )
 
-    @staticmethod
-    def _lineup_three_share(lineup: tuple[PlayerProfile, ...]) -> float:
+    def _lineup_three_share(self, lineup: tuple[PlayerProfile, ...]) -> float:
+        key = tuple(id(player) for player in lineup)
+        cached = self._lineup_three_share_cache.get(key)
+        if cached is not None and all(
+            current is original
+            for current, original in zip(lineup, cached[0])
+        ):
+            return cached[1]
         attempts = 0.0
         threes = 0.0
         for player in lineup:
@@ -265,7 +282,27 @@ class CompetingRiskEPVModel:
                 for zone, profile in player.shot_zones.items()
                 if zone.point_value == 3
             )
-        return threes / max(attempts, 1e-9)
+        result = threes / max(attempts, 1e-9)
+        self._lineup_three_share_cache[key] = (lineup, result)
+        return result
+
+    def _lineup_defensive_pressure(
+        self,
+        lineup: tuple[PlayerProfile, ...],
+    ) -> float:
+        key = tuple(id(player) for player in lineup)
+        cached = self._lineup_defense_cache.get(key)
+        if cached is not None and all(
+            current is original
+            for current, original in zip(lineup, cached[0])
+        ):
+            return cached[1]
+        result = float(np.mean([
+            max(0.0, defender.defensive_impact)
+            for defender in lineup
+        ]))
+        self._lineup_defense_cache[key] = (lineup, result)
+        return result
 
     @staticmethod
     def _lineup_make_probability(

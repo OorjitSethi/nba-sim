@@ -35,6 +35,11 @@ from nba_sim.franchise.ratings import (
     build_league_ratings,
     lifecycle_composites,
 )
+from nba_sim.franchise.contracts import build_modeled_contracts
+from nba_sim.franchise.roster_operations import build_league_roster_plans
+from nba_sim.franchise.season_cycle import initialize_season_cycle
+from nba_sim.franchise.gm import build_league_general_manager_plans
+from nba_sim.franchise.public_experience import default_experience
 from nba_sim.franchise.state import LeagueState
 
 
@@ -170,7 +175,7 @@ def build_current_league_state(
             current.isoformat(),
         )
     )
-    return LeagueState(
+    state = LeagueState(
         schema_version=1,
         league_id=f"league-{hashlib.sha256(identity.encode()).hexdigest()[:16]}",
         league_name=normalized_name,
@@ -197,4 +202,27 @@ def build_current_league_state(
             sorted(scouting_reports, key=lambda record: record.player_id)
         ),
         scouting_departments=tuple(scouting_departments),
+    )
+    state = replace(state, contracts=build_modeled_contracts(state), head_hash="")
+    state = replace(state, roster_plans=build_league_roster_plans(state), head_hash="")
+    state = replace(
+        state,
+        season_cycle=initialize_season_cycle(
+            season=state.season,
+            start=state.calendar.regular_season_start,
+            end=state.calendar.regular_season_end,
+            seed=state.seed,
+            current=state.calendar.current_date,
+        ),
+        head_hash="",
+    )
+    state = replace(
+        state,
+        gm_plans=build_league_general_manager_plans(state),
+        head_hash="",
+    )
+    return replace(
+        state,
+        experience=default_experience(as_of=state.calendar.current_date),
+        head_hash="",
     )

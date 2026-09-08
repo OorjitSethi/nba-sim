@@ -25,16 +25,40 @@ A recorded session contributes:
 `external load = session minutes × intensity multiplier`
 
 Acute load, chronic load, and fatigue use different exponential recovery rates.
-League-date advancement applies that recovery deterministically. Medical status
-does not auto-clear when an expected-return date passes; that date is an
-estimate, not clearance.
+League-date advancement applies that recovery deterministically. User-entered
+medical status does not auto-clear when an expected-return date passes; that date
+is an estimate, not clearance. A simulated injury is different: it advances from
+out to a five-day, 24-minute return-to-play ramp and then to available. That
+automatic path is explicitly identified by its simulation provenance.
 
 The load-concern index responds to rapid load increases, very low recent
 preparation relative to chronic load, current fatigue, and availability status.
-It is deliberately not called an injury probability. Available research finds
+It is deliberately not presented as a standalone injury probability. Available research finds
 associations and substantial player-to-player variation, while the basketball
 systematic review describes limited conclusive evidence for precise individual
 risk prediction.
+
+## Seeded injury occurrence
+
+After each detailed regular-season or playoff game, every player who appeared
+receives one deterministic injury-occurrence draw. The hazard is bounded and uses:
+
+- actual minutes in that game;
+- known season age when available;
+- current load concern and fatigue;
+- a modest prior-injury multiplier;
+- additional exposure during a managed return.
+
+The draw uses a stream derived from the save seed, stable game ID, and player ID.
+It cannot consume or reorder the possession engine's random numbers. Repeating the
+same saved timeline therefore produces the same game and injury outcomes even
+when same-day games run in parallel.
+
+An occurrence records severity, body area, description, estimated return,
+recovery state, and games missed. Day-to-day, minor, moderate, major, and severe
+durations use explicit bounded priors; they are simulation categories rather
+than diagnoses. Injuries are applied after the final, so they affect subsequent
+games rather than retroactively changing the completed game's minutes.
 
 ## Simulation integration
 
@@ -47,6 +71,12 @@ Matchup Lab accepts a Franchise save:
 The dashboard's **Use Franchise health** control sends the active save into the
 same rotation-conditioning code used by ordinary manual absences.
 
+The Season Hub displays the user team's current and historical injury report.
+The Health & Workload workspace provides the selected player's full saved injury
+history, estimated return, recovery state, and games missed. Automatic roster
+delegation re-optimizes after a completed simulation batch, so newly unavailable
+players are removed from future plans.
+
 ## API
 
 - `POST /api/franchise/initialize-health`
@@ -57,9 +87,10 @@ same rotation-conditioning code used by ordinary manual absences.
 
 The local data currently observes game minutes but not practice load, internal
 load, sleep, soreness, biomechanics, medical imaging, or clinician assessment.
-Those inputs must be user-entered or supplied through an appropriately licensed
-source. The initial acute/chronic baseline is therefore an estimate based on the
-prior-season role and is labeled with its confidence.
+The simulator therefore does not fabricate unseen practice injuries. Those
+inputs must be user-entered or supplied through an appropriately licensed source.
+The initial acute/chronic baseline and injury-duration categories are modeled
+priors and are labeled with their provenance; neither is a medical forecast.
 
 Research informing the structure and its caution:
 

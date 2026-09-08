@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from nba_sim.web import DashboardService
+from nba_sim.franchise.careers import advance_career_state
 
 
 class DashboardServiceTests(unittest.TestCase):
@@ -40,19 +41,14 @@ class DashboardServiceTests(unittest.TestCase):
         self.assertEqual(metadata["deployment"]["matchup_trial_limit"], 25)
         with self.assertRaisesRegex(ValueError, r"trials must be 25\.\.25"):
             hosted.run_matchup(
-                {
-                    "mode": "hybrid",
-                    "home": "UTA",
-                    "away": "MEM",
-                    "trials": 26,
-                }
+                {"mode": "hybrid", "home": "UTA", "away": "MEM", "trials": 26}
             )
 
     def test_vercel_public_assets_match_the_local_dashboard(self) -> None:
         root = Path(__file__).parents[1]
         source = root / "src" / "nba_sim" / "web_assets"
         public = root / "public"
-        for filename in ("index.html", "app.js", "styles.css"):
+        for filename in ("index.html", "app.js", "styles.css", "favicon.svg"):
             self.assertEqual(
                 (public / filename).read_bytes(),
                 (source / filename).read_bytes(),
@@ -103,13 +99,17 @@ class DashboardServiceTests(unittest.TestCase):
         self.assertIn("/api/franchise/run-scouting-cycle", javascript)
         self.assertIn('data-franchise-tab="draft"', html)
         self.assertIn('id="draft-board"', html)
+        self.assertIn('id="draft-class-outlook"', html)
         self.assertIn("/api/franchise/initialize-draft", javascript)
         self.assertIn("/api/franchise/run-draft-lottery", javascript)
         self.assertIn("/api/franchise/make-draft-pick", javascript)
         self.assertNotIn("button.textContent = loadingLabel", javascript)
         self.assertIn('button.querySelector("span") || button', javascript)
         self.assertIn('data-franchise-tab="trades"', html)
+        self.assertIn('id="trade-finder-form"', html)
         self.assertIn('id="trade-rules-form"', html)
+        self.assertIn("/api/franchise/find-trades", javascript)
+        self.assertIn("/api/franchise/counter-trade", javascript)
         self.assertIn("/api/franchise/evaluate-trade", javascript)
         self.assertIn("/api/franchise/run-ai-trade-market", javascript)
 
@@ -151,6 +151,70 @@ class DashboardServiceTests(unittest.TestCase):
         self.assertEqual(len(lottery["draft"]["lottery"]), 16)
         replay = self.service.load_franchise({"save_id": save_id})
         self.assertEqual(replay["draft"]["order"], lottery["draft"]["order"])
+        self.assertTrue(replay["integrity"]["verified"])
+
+    def test_completed_draft_becomes_permanent_league_population(self) -> None:
+        created = self.service.create_franchise({
+            "name": "Future Population League",
+            "user_team": "UTA",
+            "seed": 808,
+        })
+        save_id = created["save"]["save_id"]
+        initial_players = created["summary"]["counts"]["players"]
+        initial_contracts = created["summary"]["counts"]["contracts"]
+        result = self.service.initialize_draft_ecosystem({
+            "save_id": save_id,
+            "seed": 809,
+        })
+        self.assertEqual(result["draft"]["draft_year"], 2027)
+        result = self.service.run_draft_lottery({"save_id": save_id, "seed": 810})
+        while result["draft"]["status"] != "complete":
+            if result["draft"]["user_on_clock"]:
+                player_id = next(
+                    item["player_id"]
+                    for item in result["draft"]["prospects"]
+                    if not item["drafted"]
+                )
+                result = self.service.make_draft_pick({
+                    "save_id": save_id,
+                    "player_id": player_id,
+                })
+            else:
+                result = self.service.simulate_to_user_draft_pick({"save_id": save_id})
+        self.assertEqual(result["summary"]["counts"]["players"], initial_players + 75)
+        self.assertEqual(result["summary"]["counts"]["contracts"], initial_contracts + 60)
+        self.assertEqual(result["summary"]["counts"]["player_lifecycles"], initial_players + 75)
+        self.assertEqual(result["summary"]["counts"]["player_health"], initial_players + 75)
+        loaded = self.service.franchise_repository.load(save_id)
+        self.assertEqual(sum(item.roster_status == "free_agent" for item in loaded.state.players[-75:]), 15)
+        self.assertEqual(len(loaded.events[-1].payload["draft_intake"]["players"]), 75)
+        first_selection = loaded.state.draft_ecosystem.selections[0]
+        prospect = next(
+            item for item in loaded.state.draft_ecosystem.prospects
+            if item.player_id == first_selection.player_id
+        )
+        profile = self.service._franchise_team_profile(loaded, first_selection.team).player(
+            first_selection.player_id
+        )
+        self.assertAlmostEqual(profile.height_inches, prospect.height_inches)
+        rookie_lifecycle = next(
+            item for item in loaded.state.player_lifecycles
+            if item.player_id == first_selection.player_id
+        )
+        progression = advance_career_state(
+            loaded.state,
+            season_minutes={},
+            season_games={},
+            games_missed={},
+        )
+        self.assertEqual(
+            next(
+                item for item in progression.lifecycles
+                if item.player_id == first_selection.player_id
+            ),
+            rookie_lifecycle,
+        )
+        replay = self.service.load_franchise({"save_id": save_id})
         self.assertTrue(replay["integrity"]["verified"])
 
     def test_scouting_board_and_manual_observation_are_persistent(self) -> None:
@@ -348,7 +412,11 @@ class DashboardServiceTests(unittest.TestCase):
         self.assertNotEqual(advanced["summary"]["current_date"], original_date)
         self.assertEqual(
             advanced["summary"]["revision"],
-            created["summary"]["revision"] + 1,
+            created["summary"]["revision"] + 2,
+        )
+        self.assertEqual(
+            advanced["general_manager"]["user_plan"]["last_review_reason"],
+            "weekly roster, cap, health and market audit",
         )
         self.assertEqual(
             advanced["scouting"]["department"]["cycles_completed"],

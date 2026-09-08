@@ -8,6 +8,7 @@ from nba_sim.franchise.draft import (
     draft_response,
     generate_draft_ecosystem,
     make_next_pick,
+    materialize_draft_intake,
     run_321_lottery,
     run_draft_combine,
     scout_prospect,
@@ -46,8 +47,11 @@ class DraftEcosystemTests(unittest.TestCase):
         self.assertNotIn("offense", prospect)
         self.assertNotIn("potential", prospect)
         self.assertNotIn("public_score", prospect)
+        self.assertNotIn("latent_tier", prospect)
+        self.assertNotIn("durability", prospect)
         self.assertIn("overall_mean", prospect)
         self.assertIsNone(prospect["height_inches"])
+        self.assertIn("class_outlook", response)
 
     def test_scouting_and_combine_narrow_beliefs(self) -> None:
         ecosystem, _ = self.ecosystem()
@@ -116,6 +120,67 @@ class DraftEcosystemTests(unittest.TestCase):
         )
         self.assertEqual(ecosystem.selections[0].player_id, selected_id)
         self.assertEqual(ecosystem.status, "in_progress")
+
+    def test_long_run_classes_are_varied_and_generational_talent_is_rare(self) -> None:
+        tier_counts = {"generational": 0, "franchise": 0}
+        position_counts = {position: 0 for position in ("PG", "SG", "SF", "PF", "C")}
+        class_strengths = []
+        total = 0
+        for seed in range(120):
+            ecosystem, _ = self.ecosystem(seed=seed)
+            class_strengths.append(ecosystem.latent_class_strength)
+            for prospect in ecosystem.prospects:
+                total += 1
+                position_counts[prospect.position] += 1
+                if prospect.latent_tier in tier_counts:
+                    tier_counts[prospect.latent_tier] += 1
+        self.assertGreater(tier_counts["generational"], 3)
+        self.assertLess(tier_counts["generational"] / total, 0.006)
+        self.assertGreater(tier_counts["franchise"], tier_counts["generational"])
+        self.assertLess(min(class_strengths), -2.0)
+        self.assertGreater(max(class_strengths), 2.0)
+        for count in position_counts.values():
+            self.assertGreater(count / total, 0.15)
+            self.assertLess(count / total, 0.25)
+
+    def test_completed_class_materializes_rookies_and_undrafted_free_agents(self) -> None:
+        ecosystem, assets = self.ecosystem(seed=81)
+        ecosystem = run_321_lottery(
+            ecosystem,
+            team_strengths={team: float(index) for index, team in enumerate(TEAMS)},
+            assets=assets,
+            seed=82,
+        )
+        while ecosystem.status != "complete":
+            slot = ecosystem.order[len(ecosystem.selections)]
+            available = next(
+                item.player_id for item in ecosystem.prospects
+                if item.player_id not in {selection.player_id for selection in ecosystem.selections}
+            )
+            ecosystem = make_next_pick(
+                ecosystem,
+                user_team=slot.current_team,
+                player_id=available,
+                seed=ecosystem.class_seed,
+            )
+        intake = materialize_draft_intake(
+            ecosystem,
+            teams=TEAMS,
+            incoming_season="2027-28",
+            occurred_on=date(2027, 6, 23),
+        )
+        self.assertEqual(len(intake.players), 75)
+        self.assertEqual(len(intake.lifecycles), 75)
+        self.assertEqual(len(intake.health), 75)
+        self.assertEqual(len(intake.scouting_reports), 75)
+        self.assertEqual(len(intake.contracts), 60)
+        self.assertEqual(sum(item.roster_status == "active" for item in intake.players), 60)
+        self.assertEqual(sum(item.roster_status == "free_agent" for item in intake.players), 15)
+        first = next(item for item in intake.contracts if item.contract_id.startswith("rookie-2027-1-"))
+        self.assertEqual(len(first.years), 4)
+        self.assertEqual(first.years[2].option, "team")
+        self.assertEqual(first.years[0].season, "2027-28")
+        self.assertGreater(first.years[0].salary, 14_100_000)
 
 
 if __name__ == "__main__":

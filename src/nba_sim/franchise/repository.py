@@ -241,11 +241,12 @@ class FranchiseSaveRepository:
         connection.execute(
             """
             UPDATE franchise_saves
-            SET updated_at = ?, head_revision = ?, head_hash = ?
+            SET updated_at = ?, season = ?, head_revision = ?, head_hash = ?
             WHERE save_id = ?
             """,
             (
                 event.recorded_at.isoformat(),
+                updated.season,
                 updated.revision,
                 updated.head_hash,
                 save_id,

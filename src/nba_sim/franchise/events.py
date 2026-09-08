@@ -39,6 +39,22 @@ class LeagueEventType(str, Enum):
     TRADE_CENTER_INITIALIZED = "trade_center_initialized"
     TRADE_RULE_POLICY_UPDATED = "trade_rule_policy_updated"
     TRADE_COMPLETED = "trade_completed"
+    CONTRACT_MARKET_INITIALIZED = "contract_market_initialized"
+    CONTRACT_UPDATED = "contract_updated"
+    CONTRACT_OPTION_DECIDED = "contract_option_decided"
+    PLAYER_WAIVED = "player_waived"
+    FREE_AGENT_SIGNED = "free_agent_signed"
+    ROSTER_OPERATIONS_INITIALIZED = "roster_operations_initialized"
+    ROSTER_PLAN_UPDATED = "roster_plan_updated"
+    SEASON_CYCLE_INITIALIZED = "season_cycle_initialized"
+    SEASON_GAMES_SIMULATED = "season_games_simulated"
+    SEASON_STAGE_ADVANCED = "season_stage_advanced"
+    OFFSEASON_STAGE_ADVANCED = "offseason_stage_advanced"
+    SEASON_ROLLED_OVER = "season_rolled_over"
+    GM_INTELLIGENCE_INITIALIZED = "gm_intelligence_initialized"
+    GM_PLANS_REVIEWED = "gm_plans_reviewed"
+    GM_PLAN_UPDATED = "gm_plan_updated"
+    EXPERIENCE_CONFIGURED = "experience_configured"
 
 
 def _canonical(value: object) -> str:

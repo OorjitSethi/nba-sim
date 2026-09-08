@@ -7,6 +7,7 @@ from nba_sim.franchise.cba import (
     TransactionAction,
     cap_position,
     evaluate_transaction,
+    rules_for_season,
     team_cap_sheet,
 )
 from nba_sim.franchise.events import LeagueEvent, LeagueEventType
@@ -50,6 +51,7 @@ __all__ = [
     "build_current_league_state",
     "cap_position",
     "evaluate_transaction",
+    "rules_for_season",
     "lifecycle_stage",
     "load_concern_index",
     "project_lifecycle",

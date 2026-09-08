@@ -86,6 +86,41 @@ CBA_2026_27 = CBAYearRules(
     room_mle=9_366_000,
 )
 
+PROJECTED_CAP_GROWTH = 0.08
+
+
+def rules_for_season(season: str) -> CBAYearRules:
+    """Return the official base year or a clearly labeled planning projection.
+
+    Future cap years use the league's existing eight-percent planning assumption.
+    Keeping the thresholds in a full rules object ensures every downstream CBA
+    gate advances together instead of mixing a future payroll with 2026-27 lines.
+    """
+    try:
+        start_year = int(str(season).split("-", 1)[0])
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"invalid season: {season}") from error
+    if start_year <= 2026:
+        return CBA_2026_27
+    multiplier = (1 + PROJECTED_CAP_GROWTH) ** (start_year - 2026)
+
+    def scaled(value: int) -> int:
+        return round(value * multiplier / 1_000) * 1_000
+
+    return CBAYearRules(
+        season=str(season),
+        salary_cap=scaled(CBA_2026_27.salary_cap),
+        tax_level=scaled(CBA_2026_27.tax_level),
+        minimum_team_salary=scaled(CBA_2026_27.minimum_team_salary),
+        first_apron=scaled(CBA_2026_27.first_apron),
+        second_apron=scaled(CBA_2026_27.second_apron),
+        non_taxpayer_mle=scaled(CBA_2026_27.non_taxpayer_mle),
+        taxpayer_mle=scaled(CBA_2026_27.taxpayer_mle),
+        room_mle=scaled(CBA_2026_27.room_mle),
+        rules_version=f"nba-nbpa-2023-cba/{season}.projected-v1",
+        source_url=CBA_2026_27.source_url,
+    )
+
 _REFERENCE_2023_24_CAP = 136_021_000
 _REFERENCE_EXPANDED_TPE_INCREMENT = 7_500_000
 _TRADE_ALLOWANCE = 250_000
@@ -277,7 +312,7 @@ def evaluate_transaction(
         if incoming > exception_limit:
             blockers.append(
                 f"The entered salary exceeds this exception's "
-                f"${exception_limit / 1_000_000:.3f}M 2026–27 limit."
+                f"${exception_limit / 1_000_000:.3f}M {rules.season} limit."
             )
         else:
             explanations.append(
@@ -306,7 +341,7 @@ def evaluate_transaction(
     if not blockers:
         explanations.insert(
             0,
-            f"The entered scenario clears the encoded 2026–27 {transaction.value.replace('_', ' ')} gates.",
+            f"The entered scenario clears the encoded {rules.season} {transaction.value.replace('_', ' ')} gates.",
         )
 
     return TransactionEvaluation(
@@ -364,23 +399,24 @@ def team_cap_sheet(
     state: "LeagueState",
     team: str,
     *,
-    rules: CBAYearRules = CBA_2026_27,
+    rules: CBAYearRules | None = None,
 ) -> dict[str, object]:
+    rules = rules or rules_for_season(state.season)
     normalized = team.upper()
     roster = state.roster(normalized)
     current_contracts = {}
+    dead_money = 0
     for contract in state.contracts:
-        if contract.team != normalized or contract.status.lower() not in {
-            "active",
-            "guaranteed",
-        }:
+        if contract.team != normalized:
             continue
         salary_year = next(
             (year for year in contract.years if year.season == state.season),
             None,
         )
-        if salary_year is not None:
+        if salary_year is not None and contract.status.lower() in {"active", "guaranteed"}:
             current_contracts[contract.player_id] = (contract, salary_year)
+        elif salary_year is not None and contract.status.lower() == "waived":
+            dead_money += salary_year.salary
 
     salary_rows = []
     known_salary = 0
@@ -396,7 +432,11 @@ def team_cap_sheet(
                 "salary": salary,
                 "option": contract_year[1].option if contract_year else None,
                 "source": contract_year[0].source if contract_year else None,
-                "status": "verified" if contract_year else "not_imported",
+                "status": (
+                    "modeled"
+                    if contract_year and contract_year[0].source.startswith("modeled-")
+                    else "verified" if contract_year else "not_imported"
+                ),
             }
         )
 
@@ -410,16 +450,22 @@ def team_cap_sheet(
         "players_with_salary": covered,
         "coverage": round(covered / len(roster), 6) if roster else 0.0,
         "complete": complete,
-        "known_salary": known_salary,
+        "known_salary": known_salary + dead_money,
+        "active_salary": known_salary,
+        "dead_money": dead_money,
+        "official_salary_data": complete and all(
+            row["status"] == "verified" for row in salary_rows
+        ),
         "cap_position": (
-            cap_position(known_salary, rules=rules).as_dict()
+            cap_position(known_salary + dead_money, rules=rules).as_dict()
             if complete
             else None
         ),
         "players": salary_rows,
         "warning": (
-            None
-            if complete
+            "Salaries are a complete modeled ledger, not official contract records."
+            if complete and any(row["status"] == "modeled" for row in salary_rows)
+            else None if complete
             else "Official contract salaries are incomplete. Known salary is not treated as total payroll or cap room."
         ),
     }

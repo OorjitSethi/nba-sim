@@ -280,6 +280,36 @@ def lifecycle_composites(
     }
 
 
+def generated_rating_profile(
+    player: PlayerRecord,
+    profile: PlayerProfile,
+    lifecycle: PlayerLifecycleRecord,
+    *,
+    league_size: int,
+) -> dict[str, object]:
+    """Build the detailed 2K-style view without ranking a rookie as an established player."""
+    overall = int(_clip(round(lifecycle.overall), RATING_MINIMUM, RATING_MAXIMUM))
+    return _rating_profile(
+        RatingInput(
+            player=player,
+            profile=profile,
+            statistics=None,
+            lifecycle=lifecycle,
+            historical_profile=None,
+        ),
+        overall=overall,
+        league_rank=0,
+        league_size=league_size,
+        age_adjustment=0.0,
+        overall_components={
+            "source": "generated prospect latent attributes",
+            "as_of_rating": overall,
+            "potential_mean": round(lifecycle.potential_mean, 3),
+            "uncertainty": round(lifecycle.potential_sd, 3),
+        },
+    )
+
+
 def _rating_profile(
     item: RatingInput,
     *,

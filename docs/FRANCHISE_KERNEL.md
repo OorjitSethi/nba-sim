@@ -155,3 +155,6 @@ multi-team transaction routing, prior exception/hard-cap history,
 chronologically trained lifecycle calibration, committed annual progression,
 scout hiring and calibration, rookie signing, and free agency belong to later
 phases.
+
+The public rebuilding-game delivery order is maintained in
+[`FRANCHISE_REBUILD_ROADMAP.md`](FRANCHISE_REBUILD_ROADMAP.md).

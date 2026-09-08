@@ -11,22 +11,31 @@ from nba_sim.franchise.draft import DraftEcosystemRecord
 from nba_sim.franchise.trading import TradeRulePolicy
 from nba_sim.franchise.models import (
     CapExceptionRecord,
+    CareerDecisionRecord,
     CoachingProfileRecord,
     ContractRecord,
     DraftAssetRecord,
     FranchiseRecord,
+    FranchiseExperienceRecord,
+    GeneralManagerPlanRecord,
     InjuryRecord,
     LeagueCalendar,
     PlayerHealthRecord,
     PlayerLifecycleRecord,
     PlayerRecord,
+    RosterPlanRecord,
     ScoutingDepartmentRecord,
     ScoutingReportRecord,
     StaffRecord,
     TeamChemistryRecord,
     TransactionRecord,
 )
-from nba_sim.franchise.health import advance_health_records
+from nba_sim.franchise.health import advance_health_records, reconcile_injury_history
+from nba_sim.franchise.season_cycle import (
+    FranchiseSeasonRecord,
+    SeasonGameRecord,
+    replace_games,
+)
 
 
 @dataclass(frozen=True)
@@ -41,6 +50,7 @@ class LeagueState:
     franchises: tuple[FranchiseRecord, ...]
     players: tuple[PlayerRecord, ...]
     player_lifecycles: tuple[PlayerLifecycleRecord, ...] = ()
+    career_decisions: tuple[CareerDecisionRecord, ...] = ()
     player_health: tuple[PlayerHealthRecord, ...] = ()
     team_chemistry: tuple[TeamChemistryRecord, ...] = ()
     coaching_profiles: tuple[CoachingProfileRecord, ...] = ()
@@ -48,12 +58,18 @@ class LeagueState:
     scouting_departments: tuple[ScoutingDepartmentRecord, ...] = ()
     staff: tuple[StaffRecord, ...] = ()
     contracts: tuple[ContractRecord, ...] = ()
+    roster_plans: tuple[RosterPlanRecord, ...] = ()
     draft_assets: tuple[DraftAssetRecord, ...] = ()
     cap_exceptions: tuple[CapExceptionRecord, ...] = ()
     injuries: tuple[InjuryRecord, ...] = ()
     transactions: tuple[TransactionRecord, ...] = ()
     draft_ecosystem: DraftEcosystemRecord | None = None
+    draft_history: tuple[DraftEcosystemRecord, ...] = ()
     trade_rule_policy: TradeRulePolicy | None = None
+    season_cycle: FranchiseSeasonRecord | None = None
+    season_history: tuple[FranchiseSeasonRecord, ...] = ()
+    gm_plans: tuple[GeneralManagerPlanRecord, ...] = ()
+    experience: FranchiseExperienceRecord | None = None
     revision: int = 0
     head_hash: str = ""
 
@@ -104,6 +120,11 @@ class LeagueState:
             raise ValueError(
                 "player lifecycle coverage must be empty or complete"
             )
+        _unique(self.career_decisions, "decision_id", "career decision")
+        if {
+            record.player_id for record in self.career_decisions
+        } - set(player_ids):
+            raise ValueError("career decision references an unknown player")
         _unique(self.player_health, "player_id", "player health")
         if (
             self.player_health
@@ -134,10 +155,35 @@ class LeagueState:
         self._validate_references(set(teams), set(player_ids))
         _unique(self.staff, "staff_id", "staff")
         _unique(self.contracts, "contract_id", "contract")
+        _unique(self.roster_plans, "team", "roster plan")
         _unique(self.draft_assets, "asset_id", "draft asset")
         _unique(self.cap_exceptions, "exception_id", "cap exception")
         _unique(self.injuries, "injury_id", "injury")
         _unique(self.transactions, "transaction_id", "transaction")
+        draft_years = [item.draft_year for item in self.draft_history]
+        if len(draft_years) != len(set(draft_years)):
+            raise ValueError("draft history contains a duplicate year")
+        if (
+            self.draft_ecosystem is not None
+            and self.draft_ecosystem.draft_year in draft_years
+        ):
+            raise ValueError("active draft is already archived")
+        _unique(self.gm_plans, "team", "general-manager plan")
+        history_seasons = [item.season for item in self.season_history]
+        if len(history_seasons) != len(set(history_seasons)):
+            raise ValueError("league history contains a duplicate season")
+        if (
+            self.season_cycle is not None
+            and self.season_cycle.season in history_seasons
+        ):
+            raise ValueError("active season is already archived")
+        if self.gm_plans and {item.team for item in self.gm_plans} != set(teams):
+            raise ValueError("general-manager plans must be empty or cover every team")
+        if any(
+            set((*item.core_player_ids, *item.trade_block_player_ids)) - set(player_ids)
+            for item in self.gm_plans
+        ):
+            raise ValueError("general-manager plan references an unknown player")
         if self.revision < 0:
             raise ValueError("league revision cannot be negative")
         if not self.head_hash:
@@ -160,6 +206,11 @@ class LeagueState:
         for contract in self.contracts:
             if contract.team not in teams or contract.player_id not in player_ids:
                 raise ValueError("contract references an unknown team or player")
+        for plan in self.roster_plans:
+            if plan.team not in teams:
+                raise ValueError("roster plan references an unknown team")
+            if {item.player_id for item in plan.assignments} - player_ids:
+                raise ValueError("roster plan references an unknown player")
         for asset in self.draft_assets:
             if asset.original_team not in teams or asset.current_team not in teams:
                 raise ValueError("draft asset references an unknown team")
@@ -188,7 +239,7 @@ class LeagueState:
     def _compatible_legacy_genesis_hashes(self) -> set[str]:
         """Hash older state shapes so every prior franchise phase still replays."""
         hashes: set[str] = set()
-        for omitted in (
+        original_omissions = (
             ("scouting_reports", "scouting_departments"),
             (
                 "scouting_reports",
@@ -219,19 +270,50 @@ class LeagueState:
                 "player_health",
                 "player_lifecycles",
             ),
-        ):
-            value = self.as_dict()
-            for key in omitted:
-                value.pop(key, None)
-            value["revision"] = 0
-            value["head_hash"] = ""
-            encoded = json.dumps(
-                value,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode("utf-8")
-            hashes.add(hashlib.sha256(encoded).hexdigest())
+        )
+        prior_shapes = (("roster_plans",), *original_omissions, *(
+            (*items, "roster_plans") for items in original_omissions
+        ))
+        legacy_shapes_without_history = (
+            (),
+            ("season_cycle",),
+            *prior_shapes,
+            *((*items, "season_cycle") for items in prior_shapes),
+        )
+        legacy_shapes_before_careers = (
+            *legacy_shapes_without_history,
+            *(
+                (*items, "season_history")
+                for items in legacy_shapes_without_history
+            ),
+        )
+        legacy_shapes_before_drafts = (
+            *legacy_shapes_before_careers,
+            *((*items, "career_decisions") for items in legacy_shapes_before_careers),
+        )
+        legacy_shapes = (
+            *legacy_shapes_before_drafts,
+            *((*items, "draft_history") for items in legacy_shapes_before_drafts),
+        )
+        for omitted in legacy_shapes:
+            for shape in (
+                omitted,
+                (*omitted, "gm_plans"),
+                (*omitted, "experience"),
+                (*omitted, "gm_plans", "experience"),
+            ):
+                value = self.as_dict()
+                for key in shape:
+                    value.pop(key, None)
+                value["revision"] = 0
+                value["head_hash"] = ""
+                encoded = json.dumps(
+                    value,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+                hashes.add(hashlib.sha256(encoded).hexdigest())
         return hashes
 
     def franchise(self, team: str) -> FranchiseRecord:
@@ -272,6 +354,7 @@ class LeagueState:
                 "franchises": len(self.franchises),
                 "players": len(self.players),
                 "player_lifecycles": len(self.player_lifecycles),
+                "career_decisions": len(self.career_decisions),
                 "player_health": len(self.player_health),
                 "team_chemistry": len(self.team_chemistry),
                 "coaching_profiles": len(self.coaching_profiles),
@@ -279,13 +362,19 @@ class LeagueState:
                 "scouting_departments": len(self.scouting_departments),
                 "staff": len(self.staff),
                 "contracts": len(self.contracts),
+                "roster_plans": len(self.roster_plans),
                 "draft_assets": len(self.draft_assets),
                 "draft_prospects": (
                     len(self.draft_ecosystem.prospects)
                     if self.draft_ecosystem is not None
                     else 0
                 ),
+                "draft_history": len(self.draft_history),
                 "trade_center": 1 if self.trade_rule_policy is not None else 0,
+                "season_cycle": 1 if self.season_cycle is not None else 0,
+                "season_history": len(self.season_history),
+                "gm_plans": len(self.gm_plans),
+                "experience": 1 if self.experience is not None else 0,
                 "cap_exceptions": len(self.cap_exceptions),
                 "injuries": len(self.injuries),
                 "transactions": len(self.transactions),
@@ -308,6 +397,9 @@ class LeagueState:
             "player_lifecycles": [
                 record.as_dict() for record in self.player_lifecycles
             ],
+            "career_decisions": [
+                record.as_dict() for record in self.career_decisions
+            ],
             "player_health": [
                 record.as_dict() for record in self.player_health
             ],
@@ -325,6 +417,7 @@ class LeagueState:
             ],
             "staff": [record.as_dict() for record in self.staff],
             "contracts": [record.as_dict() for record in self.contracts],
+            "roster_plans": [record.as_dict() for record in self.roster_plans],
             "draft_assets": [record.as_dict() for record in self.draft_assets],
             "cap_exceptions": [
                 record.as_dict() for record in self.cap_exceptions
@@ -338,9 +431,24 @@ class LeagueState:
                 if self.draft_ecosystem is not None
                 else {}
             ),
+            "draft_history": [item.as_dict() for item in self.draft_history],
             **(
                 {"trade_rule_policy": self.trade_rule_policy.as_dict()}
                 if self.trade_rule_policy is not None
+                else {}
+            ),
+            **(
+                {"season_cycle": self.season_cycle.as_dict()}
+                if self.season_cycle is not None
+                else {}
+            ),
+            "season_history": [
+                item.as_dict() for item in self.season_history
+            ],
+            "gm_plans": [item.as_dict() for item in self.gm_plans],
+            **(
+                {"experience": self.experience.as_dict()}
+                if self.experience is not None
                 else {}
             ),
             "revision": self.revision,
@@ -372,6 +480,10 @@ class LeagueState:
                 PlayerLifecycleRecord.from_dict(item)
                 for item in value.get("player_lifecycles", [])  # type: ignore[arg-type]
             ),
+            career_decisions=tuple(
+                CareerDecisionRecord.from_dict(item)
+                for item in value.get("career_decisions", [])  # type: ignore[arg-type]
+            ),
             player_health=tuple(
                 PlayerHealthRecord.from_dict(item)
                 for item in value.get("player_health", [])  # type: ignore[arg-type]
@@ -400,6 +512,10 @@ class LeagueState:
                 ContractRecord.from_dict(item)
                 for item in value.get("contracts", [])  # type: ignore[arg-type]
             ),
+            roster_plans=tuple(
+                RosterPlanRecord.from_dict(item)
+                for item in value.get("roster_plans", [])  # type: ignore[arg-type]
+            ),
             draft_assets=tuple(
                 DraftAssetRecord.from_dict(item)
                 for item in value.get("draft_assets", [])  # type: ignore[arg-type]
@@ -421,9 +537,33 @@ class LeagueState:
                 if isinstance(value.get("draft_ecosystem"), Mapping)
                 else None
             ),
+            draft_history=tuple(
+                DraftEcosystemRecord.from_dict(item)
+                for item in value.get("draft_history", [])  # type: ignore[arg-type]
+                if isinstance(item, Mapping)
+            ),
             trade_rule_policy=(
                 TradeRulePolicy.from_dict(value["trade_rule_policy"])
                 if isinstance(value.get("trade_rule_policy"), Mapping)
+                else None
+            ),
+            season_cycle=(
+                FranchiseSeasonRecord.from_dict(value["season_cycle"])
+                if isinstance(value.get("season_cycle"), Mapping)
+                else None
+            ),
+            season_history=tuple(
+                FranchiseSeasonRecord.from_dict(item)
+                for item in value.get("season_history", [])  # type: ignore[arg-type]
+                if isinstance(item, Mapping)
+            ),
+            gm_plans=tuple(
+                GeneralManagerPlanRecord.from_dict(item)
+                for item in value.get("gm_plans", [])  # type: ignore[arg-type]
+            ),
+            experience=(
+                FranchiseExperienceRecord.from_dict(value["experience"])
+                if isinstance(value.get("experience"), Mapping)
                 else None
             ),
             revision=int(value.get("revision", 0)),
@@ -451,10 +591,17 @@ def apply_league_event(state: LeagueState, event: LeagueEvent) -> LeagueState:
         target_date = date.fromisoformat(target)
         changes["calendar"] = state.calendar.advance_to(target_date)
         if state.player_health:
-            changes["player_health"] = advance_health_records(
+            advanced_health = advance_health_records(
                 state.player_health,
                 target=target_date,
             )
+            changes["player_health"] = advanced_health
+            if state.injuries:
+                changes["injuries"] = reconcile_injury_history(
+                    state.injuries,
+                    health={item.player_id: item for item in advanced_health},
+                    games=(),
+                )
     elif event.event_type is LeagueEventType.STAFF_REGISTERED:
         record = StaffRecord.from_dict(_record(event))
         updated = (*state.staff, record)
@@ -465,6 +612,365 @@ def apply_league_event(state: LeagueState, event: LeagueEvent) -> LeagueState:
         updated = (*state.contracts, record)
         _unique(updated, "contract_id", "contract")
         changes["contracts"] = updated
+    elif event.event_type is LeagueEventType.ROSTER_OPERATIONS_INITIALIZED:
+        if state.roster_plans:
+            raise ValueError("roster operations are already initialized")
+        values = event.payload.get("plans")
+        if not isinstance(values, list):
+            raise ValueError("roster operations require a plans list")
+        plans = tuple(
+            RosterPlanRecord.from_dict(item)
+            for item in values
+            if isinstance(item, Mapping)
+        )
+        if len(plans) != len(values):
+            raise ValueError("roster plan must be an object")
+        if {item.team for item in plans} != {item.team for item in state.franchises}:
+            raise ValueError("roster initialization must cover every team")
+        changes["roster_plans"] = plans
+    elif event.event_type is LeagueEventType.ROSTER_PLAN_UPDATED:
+        plan_value = event.payload.get("plan")
+        if not isinstance(plan_value, Mapping):
+            raise ValueError("roster update requires a plan")
+        plan = RosterPlanRecord.from_dict(plan_value)
+        if plan.team not in {item.team for item in state.roster_plans}:
+            raise ValueError("roster update references an uninitialized team")
+        changes["roster_plans"] = tuple(
+            plan if item.team == plan.team else item
+            for item in state.roster_plans
+        )
+    elif event.event_type is LeagueEventType.SEASON_CYCLE_INITIALIZED:
+        if state.season_cycle is not None:
+            raise ValueError("season cycle is already initialized")
+        cycle_value = event.payload.get("season_cycle")
+        if not isinstance(cycle_value, Mapping):
+            raise ValueError("season initialization requires season_cycle")
+        changes["season_cycle"] = FranchiseSeasonRecord.from_dict(cycle_value)
+    elif event.event_type is LeagueEventType.SEASON_GAMES_SIMULATED:
+        if state.season_cycle is None:
+            raise ValueError("season cycle is not initialized")
+        games_value = event.payload.get("games")
+        if not isinstance(games_value, list):
+            raise ValueError("game simulation requires a games list")
+        completed = tuple(
+            SeasonGameRecord.from_dict(item)
+            for item in games_value
+            if isinstance(item, Mapping)
+        )
+        if len(completed) != len(games_value) or not all(item.completed for item in completed):
+            raise ValueError("simulated games must be completed game records")
+        changes["season_cycle"] = replace_games(state.season_cycle, completed)
+        target = event.payload.get("to_date")
+        if target is not None:
+            target_date = date.fromisoformat(str(target))
+            changes["calendar"] = state.calendar.advance_to(target_date)
+        health_values = event.payload.get("health_records")
+        if health_values is not None:
+            if not isinstance(health_values, list):
+                raise ValueError("health_records must be a list")
+            changes["player_health"] = tuple(
+                PlayerHealthRecord.from_dict(item)
+                for item in health_values
+                if isinstance(item, Mapping)
+            )
+        injury_values = event.payload.get("injury_records")
+        if injury_values is not None:
+            if not isinstance(injury_values, list):
+                raise ValueError("injury_records must be a list")
+            injuries = tuple(
+                InjuryRecord.from_dict(item)
+                for item in injury_values
+                if isinstance(item, Mapping)
+            )
+            if len(injuries) != len(injury_values):
+                raise ValueError("injury record must be an object")
+            _unique(injuries, "injury_id", "injury")
+            changes["injuries"] = injuries
+    elif event.event_type is LeagueEventType.SEASON_STAGE_ADVANCED:
+        if state.season_cycle is None:
+            raise ValueError("season cycle is not initialized")
+        cycle_value = event.payload.get("season_cycle")
+        if isinstance(cycle_value, Mapping):
+            cycle = FranchiseSeasonRecord.from_dict(cycle_value)
+        else:
+            postseason_values = event.payload.get("postseason_games", [])
+            if not isinstance(postseason_values, list):
+                raise ValueError("postseason_games must be a list")
+            postseason = tuple(
+                SeasonGameRecord.from_dict(item)
+                for item in postseason_values
+                if isinstance(item, Mapping)
+            )
+            if len(postseason) != len(postseason_values):
+                raise ValueError("postseason game must be an object")
+            awards_value = event.payload.get("awards", {})
+            awards = tuple(
+                (str(key), str(value))
+                for key, value in (
+                    awards_value.items()
+                    if isinstance(awards_value, Mapping)
+                    else ()
+                )
+            )
+            cycle = replace(
+                state.season_cycle,
+                games=(*state.season_cycle.games, *postseason),
+                status=str(event.payload.get("status", "offseason")),
+                champion=(
+                    str(event.payload["champion"])
+                    if event.payload.get("champion")
+                    else None
+                ),
+                offseason_stage=(
+                    str(event.payload["offseason_stage"])
+                    if event.payload.get("offseason_stage")
+                    else None
+                ),
+                awards=awards,
+            )
+        if cycle.season != state.season_cycle.season:
+            raise ValueError("season event references the wrong season")
+        changes["season_cycle"] = cycle
+        target = event.payload.get("to_date")
+        if target is not None:
+            target_date = date.fromisoformat(str(target))
+            changes["calendar"] = state.calendar.advance_to(target_date)
+        health_values = event.payload.get("health_records")
+        if health_values is not None:
+            if not isinstance(health_values, list):
+                raise ValueError("health_records must be a list")
+            changes["player_health"] = tuple(
+                PlayerHealthRecord.from_dict(item)
+                for item in health_values
+                if isinstance(item, Mapping)
+            )
+        injury_values = event.payload.get("injury_records")
+        if injury_values is not None:
+            if not isinstance(injury_values, list):
+                raise ValueError("injury_records must be a list")
+            injuries = tuple(
+                InjuryRecord.from_dict(item)
+                for item in injury_values
+                if isinstance(item, Mapping)
+            )
+            if len(injuries) != len(injury_values):
+                raise ValueError("injury record must be an object")
+            _unique(injuries, "injury_id", "injury")
+            changes["injuries"] = injuries
+    elif event.event_type is LeagueEventType.OFFSEASON_STAGE_ADVANCED:
+        if state.season_cycle is None or state.season_cycle.status != "offseason":
+            raise ValueError("the offseason is not active")
+        cycle_value = event.payload.get("season_cycle")
+        if not isinstance(cycle_value, Mapping):
+            raise ValueError("offseason transition requires a season_cycle")
+        cycle = FranchiseSeasonRecord.from_dict(cycle_value)
+        if cycle.season != state.season_cycle.season:
+            raise ValueError("offseason transition references the wrong season")
+        changes["season_cycle"] = cycle
+        lifecycle_values = event.payload.get("player_lifecycles")
+        if lifecycle_values is not None:
+            if not isinstance(lifecycle_values, list):
+                raise ValueError("player_lifecycles must be a list")
+            lifecycles = tuple(
+                PlayerLifecycleRecord.from_dict(item)
+                for item in lifecycle_values
+                if isinstance(item, Mapping)
+            )
+            if len(lifecycles) != len(lifecycle_values):
+                raise ValueError("player lifecycle must be an object")
+            if {item.player_id for item in lifecycles} != {
+                item.player_id for item in state.players
+            }:
+                raise ValueError("offseason lifecycle coverage must be complete")
+            changes["player_lifecycles"] = lifecycles
+        career_values = event.payload.get("career_decisions")
+        if career_values is not None:
+            if not isinstance(career_values, list):
+                raise ValueError("career_decisions must be a list")
+            career_decisions = tuple(
+                CareerDecisionRecord.from_dict(item)
+                for item in career_values
+                if isinstance(item, Mapping)
+            )
+            if len(career_decisions) != len(career_values):
+                raise ValueError("career decision must be an object")
+            combined_decisions = (*state.career_decisions, *career_decisions)
+            _unique(combined_decisions, "decision_id", "career decision")
+            changes["career_decisions"] = combined_decisions
+        transaction_values = event.payload.get("career_transactions")
+        if transaction_values is not None:
+            if not isinstance(transaction_values, list):
+                raise ValueError("career_transactions must be a list")
+            career_transactions = tuple(
+                TransactionRecord.from_dict(item)
+                for item in transaction_values
+                if isinstance(item, Mapping)
+            )
+            if len(career_transactions) != len(transaction_values):
+                raise ValueError("career transaction must be an object")
+            combined_transactions = (*state.transactions, *career_transactions)
+            _unique(combined_transactions, "transaction_id", "transaction")
+            changes["transactions"] = combined_transactions
+        plan_values = event.payload.get("roster_plans")
+        if plan_values is not None:
+            if not isinstance(plan_values, list):
+                raise ValueError("roster_plans must be a list")
+            plans = tuple(
+                RosterPlanRecord.from_dict(item)
+                for item in plan_values
+                if isinstance(item, Mapping)
+            )
+            if len(plans) != len(plan_values):
+                raise ValueError("roster plan must be an object")
+            if {item.team for item in plans} != {
+                item.team for item in state.franchises
+            }:
+                raise ValueError("offseason roster plans must cover every team")
+            changes["roster_plans"] = plans
+        player_values = event.payload.get("players")
+        contract_values = event.payload.get("contracts")
+        if player_values is not None or contract_values is not None:
+            if not isinstance(player_values, list) or not isinstance(contract_values, list):
+                raise ValueError("offseason transition requires complete player and contract lists")
+            players = tuple(
+                PlayerRecord.from_dict(item)
+                for item in player_values
+                if isinstance(item, Mapping)
+            )
+            contracts = tuple(
+                ContractRecord.from_dict(item)
+                for item in contract_values
+                if isinstance(item, Mapping)
+            )
+            if {item.player_id for item in players} != {
+                item.player_id for item in state.players
+            }:
+                raise ValueError("training camp player coverage must be complete")
+            if {item.contract_id for item in contracts} != {
+                item.contract_id for item in state.contracts
+            }:
+                raise ValueError("training camp contract coverage must be complete")
+            changes["players"] = players
+            changes["contracts"] = contracts
+    elif event.event_type is LeagueEventType.SEASON_ROLLED_OVER:
+        if state.season_cycle is None or state.season_cycle.status != "offseason":
+            raise ValueError("the offseason is not ready to roll over")
+        archived_value = event.payload.get("archived_season")
+        calendar_value = event.payload.get("calendar")
+        cycle_value = event.payload.get("season_cycle")
+        if not isinstance(archived_value, Mapping):
+            raise ValueError("season rollover requires an archived season")
+        if not isinstance(calendar_value, Mapping) or not isinstance(cycle_value, Mapping):
+            raise ValueError("season rollover requires a calendar and season cycle")
+        archived = FranchiseSeasonRecord.from_dict(archived_value)
+        calendar = LeagueCalendar.from_dict(calendar_value)
+        cycle = FranchiseSeasonRecord.from_dict(cycle_value)
+        next_season_value = str(event.payload.get("season", ""))
+        if archived.as_dict() != state.season_cycle.as_dict():
+            raise ValueError("archived season does not match the active season")
+        if calendar.season != next_season_value or cycle.season != next_season_value:
+            raise ValueError("season rollover records disagree")
+        if len(state.season_history) >= 99:
+            raise ValueError("this franchise has reached its 100-season limit")
+        changes.update({
+            "season": next_season_value,
+            "calendar": calendar,
+            "season_cycle": cycle,
+            "season_history": (*state.season_history, archived),
+            "draft_history": (
+                (*state.draft_history, state.draft_ecosystem)
+                if state.draft_ecosystem is not None
+                and state.draft_ecosystem.status == "complete"
+                else state.draft_history
+            ),
+            "draft_ecosystem": None,
+        })
+        health_values = event.payload.get("player_health")
+        if health_values is not None:
+            if not isinstance(health_values, list):
+                raise ValueError("player_health must be a list")
+            changes["player_health"] = tuple(
+                PlayerHealthRecord.from_dict(item)
+                for item in health_values
+                if isinstance(item, Mapping)
+            )
+    elif event.event_type is LeagueEventType.CONTRACT_MARKET_INITIALIZED:
+        if state.contracts:
+            raise ValueError("contract market is already initialized")
+        values = event.payload.get("contracts")
+        if not isinstance(values, list):
+            raise ValueError("contract market requires a contracts list")
+        contracts = tuple(
+            ContractRecord.from_dict(item)
+            for item in values
+            if isinstance(item, Mapping)
+        )
+        if len(contracts) != len(values):
+            raise ValueError("contract market record must be an object")
+        if {item.player_id for item in contracts} != {item.player_id for item in state.players}:
+            raise ValueError("contract market initialization must cover every player")
+        _unique(contracts, "contract_id", "contract")
+        changes["contracts"] = contracts
+    elif event.event_type in {
+        LeagueEventType.CONTRACT_UPDATED,
+        LeagueEventType.CONTRACT_OPTION_DECIDED,
+    }:
+        contract_value = event.payload.get("contract")
+        transaction_value = event.payload.get("record")
+        if not isinstance(contract_value, Mapping) or not isinstance(transaction_value, Mapping):
+            raise ValueError("contract decision requires contract and transaction records")
+        contract = ContractRecord.from_dict(contract_value)
+        if contract.contract_id not in {item.contract_id for item in state.contracts}:
+            raise ValueError("contract decision references an unknown contract")
+        transaction = TransactionRecord.from_dict(transaction_value)
+        changes["contracts"] = tuple(
+            contract if item.contract_id == contract.contract_id else item
+            for item in state.contracts
+        )
+        changes["transactions"] = (*state.transactions, transaction)
+    elif event.event_type is LeagueEventType.PLAYER_WAIVED:
+        contract_value = event.payload.get("contract")
+        transaction_value = event.payload.get("record")
+        if not isinstance(contract_value, Mapping) or not isinstance(transaction_value, Mapping):
+            raise ValueError("waiver requires contract and transaction records")
+        contract = ContractRecord.from_dict(contract_value)
+        player = next((item for item in state.players if item.player_id == contract.player_id), None)
+        if player is None or player.roster_status != "active":
+            raise ValueError("waiver player is not active")
+        transaction = TransactionRecord.from_dict(transaction_value)
+        changes["contracts"] = tuple(
+            contract if item.contract_id == contract.contract_id else item
+            for item in state.contracts
+        )
+        changes["players"] = tuple(
+            replace(item, roster_status="free_agent")
+            if item.player_id == player.player_id
+            else item
+            for item in state.players
+        )
+        changes["transactions"] = (*state.transactions, transaction)
+        changes["roster_plans"] = ()
+    elif event.event_type is LeagueEventType.FREE_AGENT_SIGNED:
+        contract_value = event.payload.get("contract")
+        transaction_value = event.payload.get("record")
+        if not isinstance(contract_value, Mapping) or not isinstance(transaction_value, Mapping):
+            raise ValueError("free-agent signing requires contract and transaction records")
+        contract = ContractRecord.from_dict(contract_value)
+        player = next((item for item in state.players if item.player_id == contract.player_id), None)
+        if player is None or player.roster_status != "free_agent":
+            raise ValueError("free-agent signing player is unavailable")
+        if contract.contract_id in {item.contract_id for item in state.contracts}:
+            raise ValueError("free-agent contract already exists")
+        transaction = TransactionRecord.from_dict(transaction_value)
+        changes["contracts"] = (*state.contracts, contract)
+        changes["players"] = tuple(
+            replace(item, team=contract.team, roster_status="active")
+            if item.player_id == player.player_id
+            else item
+            for item in state.players
+        )
+        changes["transactions"] = (*state.transactions, transaction)
+        changes["roster_plans"] = ()
     elif event.event_type is LeagueEventType.DRAFT_ASSET_REGISTERED:
         record = DraftAssetRecord.from_dict(_record(event))
         updated = (*state.draft_assets, record)
@@ -569,6 +1075,7 @@ def apply_league_event(state: LeagueState, event: LeagueEvent) -> LeagueState:
         changes["injuries"] = tuple(injuries.values())
         changes["draft_assets"] = tuple(assets.values())
         changes["transactions"] = transactions
+        changes["roster_plans"] = ()
     elif event.event_type is LeagueEventType.PLAYER_LIFECYCLES_INITIALIZED:
         if state.player_lifecycles:
             raise ValueError("player lifecycles are already initialized")
@@ -630,10 +1137,17 @@ def apply_league_event(state: LeagueState, event: LeagueEvent) -> LeagueState:
         current_ids = {item.player_id for item in state.player_health}
         if record.player_id not in current_ids:
             raise ValueError("health update references an unknown player")
-        changes["player_health"] = tuple(
+        updated_health = tuple(
             record if item.player_id == record.player_id else item
             for item in state.player_health
         )
+        changes["player_health"] = updated_health
+        if state.injuries:
+            changes["injuries"] = reconcile_injury_history(
+                state.injuries,
+                health={item.player_id: item for item in updated_health},
+                games=(),
+            )
     elif event.event_type is LeagueEventType.TEAM_ENVIRONMENT_INITIALIZED:
         if state.team_chemistry or state.coaching_profiles:
             raise ValueError("team environment is already initialized")
@@ -667,6 +1181,50 @@ def apply_league_event(state: LeagueState, event: LeagueEvent) -> LeagueState:
             record if item.team == record.team else item
             for item in state.coaching_profiles
         )
+    elif event.event_type in {
+        LeagueEventType.GM_INTELLIGENCE_INITIALIZED,
+        LeagueEventType.GM_PLANS_REVIEWED,
+    }:
+        if (
+            event.event_type is LeagueEventType.GM_INTELLIGENCE_INITIALIZED
+            and state.gm_plans
+        ):
+            raise ValueError("general-manager intelligence is already initialized")
+        if (
+            event.event_type is LeagueEventType.GM_PLANS_REVIEWED
+            and not state.gm_plans
+        ):
+            raise ValueError("general-manager intelligence is not initialized")
+        values = event.payload.get("plans")
+        if not isinstance(values, list):
+            raise ValueError("general-manager event requires a plans list")
+        plans = tuple(
+            GeneralManagerPlanRecord.from_dict(item)
+            for item in values
+            if isinstance(item, Mapping)
+        )
+        if len(plans) != len(values):
+            raise ValueError("general-manager plan must be an object")
+        teams = {item.team for item in state.franchises}
+        if {item.team for item in plans} != teams:
+            raise ValueError("general-manager plans must cover every team")
+        changes["gm_plans"] = plans
+    elif event.event_type is LeagueEventType.GM_PLAN_UPDATED:
+        value = event.payload.get("plan")
+        if not isinstance(value, Mapping):
+            raise ValueError("general-manager update requires a plan")
+        plan = GeneralManagerPlanRecord.from_dict(value)
+        if plan.team not in {item.team for item in state.gm_plans}:
+            raise ValueError("general-manager update references an unknown plan")
+        changes["gm_plans"] = tuple(
+            plan if item.team == plan.team else item
+            for item in state.gm_plans
+        )
+    elif event.event_type is LeagueEventType.EXPERIENCE_CONFIGURED:
+        value = event.payload.get("experience")
+        if not isinstance(value, Mapping):
+            raise ValueError("experience event requires an experience record")
+        changes["experience"] = FranchiseExperienceRecord.from_dict(value)
     elif event.event_type is LeagueEventType.SCOUTING_INITIALIZED:
         if state.scouting_reports or state.scouting_departments:
             raise ValueError("scouting is already initialized")
@@ -779,6 +1337,48 @@ def apply_league_event(state: LeagueState, event: LeagueEvent) -> LeagueState:
                     item,
                 )
             changes["draft_assets"] = tuple(existing.values())
+        intake_value = event.payload.get("draft_intake")
+        if intake_value is not None:
+            if event.event_type is not LeagueEventType.DRAFT_PICK_MADE:
+                raise ValueError("draft intake can only accompany a completed pick")
+            if draft.status != "complete" or not isinstance(intake_value, Mapping):
+                raise ValueError("draft intake requires a completed draft")
+            player_values = intake_value.get("players")
+            lifecycle_values = intake_value.get("player_lifecycles")
+            health_values = intake_value.get("player_health")
+            report_values = intake_value.get("scouting_reports")
+            contract_values = intake_value.get("contracts")
+            if not all(isinstance(item, list) for item in (
+                player_values, lifecycle_values, health_values,
+                report_values, contract_values,
+            )):
+                raise ValueError("draft intake lists are incomplete")
+            new_players = tuple(PlayerRecord.from_dict(item) for item in player_values)
+            new_lifecycles = tuple(PlayerLifecycleRecord.from_dict(item) for item in lifecycle_values)
+            new_health = tuple(PlayerHealthRecord.from_dict(item) for item in health_values)
+            new_reports = tuple(ScoutingReportRecord.from_dict(item) for item in report_values)
+            new_contracts = tuple(ContractRecord.from_dict(item) for item in contract_values)
+            prospect_ids = {item.player_id for item in draft.prospects}
+            if {item.player_id for item in new_players} != prospect_ids:
+                raise ValueError("draft intake must materialize every prospect")
+            if any(item.player_id in {player.player_id for player in state.players} for item in new_players):
+                raise ValueError("draft intake player already exists")
+            if not state.player_lifecycles or not state.player_health or not state.scouting_reports:
+                raise ValueError("initialize lifecycle, health, and scouting before the draft")
+            if {item.player_id for item in new_lifecycles} != prospect_ids:
+                raise ValueError("draft lifecycle coverage is incomplete")
+            if {item.player_id for item in new_health} != prospect_ids:
+                raise ValueError("draft health coverage is incomplete")
+            if {item.player_id for item in new_reports} != prospect_ids:
+                raise ValueError("draft scouting coverage is incomplete")
+            selected_ids = {item.player_id for item in draft.selections}
+            if {item.player_id for item in new_contracts} != selected_ids:
+                raise ValueError("rookie contracts must cover all drafted players")
+            changes["players"] = (*state.players, *new_players)
+            changes["player_lifecycles"] = (*state.player_lifecycles, *new_lifecycles)
+            changes["player_health"] = (*state.player_health, *new_health)
+            changes["scouting_reports"] = (*state.scouting_reports, *new_reports)
+            changes["contracts"] = (*state.contracts, *new_contracts)
     elif event.event_type not in {
         LeagueEventType.LEAGUE_CREATED,
         LeagueEventType.BRANCH_CREATED,

@@ -10,6 +10,34 @@ It evaluates three separate questions:
 A legal trade is not automatically accepted, and an accepted trade is not
 necessarily value-neutral. The dashboard exposes these decisions separately.
 
+## Trade Finder
+
+Trade Finder is the guided default. A user can shop one controlled asset or a
+package of up to six players and picks to every other team, or target a package
+owned by one external club and ask for accepted constructions. Searches can
+prioritize balanced value, winning now, youth, cap relief, or draft capital.
+
+The result list contains only proposals that clear asset ownership, every
+enabled league rule, salary/apron construction, and the partner's acceptance
+model. Opening a result transfers its exact packages and frozen evaluation into
+the advanced manual builder. A declined but legal manual offer can request the
+partner's lowest-value executable counter construction from the user's
+remaining assets. Candidate construction includes players, picks, mixed
+packages, and up to four-asset returns rather than only one-for-one swaps.
+
+## Multi-team routing
+
+The advanced trade machine supports two, three, or four participating teams.
+Every selected player and pick receives an explicit destination. The evaluator
+then reconstructs incoming salary, outgoing salary, roster count, consideration,
+Stepien coverage, timing restrictions, and front-office value separately for
+every participant. A transaction can execute only when every enabled legality
+gate and every CPU decision clears.
+
+The final event stores explicit `from_team` and `to_team` movement for every
+asset. This permits circular three-team trades and split routing without relying
+on display order or an implied counterparty.
+
 ## Configurable rule policy
 
 Every encoded gate is stored as its own branch-specific toggle:
@@ -87,6 +115,27 @@ Player trade value combines:
 - cap burden; and
 - the receiving team's contender, balanced, or rebuilding posture.
 
+Elite-player scarcity is nonlinear. The value increase from 92 to 96 OVR is
+intentionally much larger than the increase from 72 to 76. A package is valued
+as a package rather than as an unrestricted sum: its best player carries full
+weight while additional players receive diminishing consolidation weight. This
+prevents several low-leverage rotation players from mechanically equaling a
+superstar merely because their individual scores add up.
+
+Contract value includes the current cap charge, expected production salary,
+remaining team control, player-option risk, and modeled surplus or burden.
+Future first-round value uses the original team's current strength rank as a
+projected slot, regresses farther-out seasons toward league average, discounts
+protections, and then applies the receiving front office's timeline and risk
+tolerance. The model does not treat every future first as an identical token.
+
+Each front office also derives a strength rank, average age, positional needs
+and surplus, protected core, trade block, deadline urgency, patience, and risk
+tolerance. Trading a protected core player adds a real premium; acquiring a
+needed position or a young player on a rebuilding timeline adds team-specific
+fit value. Distant picks are discounted differently by contenders and
+rebuilders.
+
 Contenders put more weight on current impact and less on distant upside.
 Rebuilding teams place more weight on youth, potential, and uncertain future
 first-round picks. Draft-asset value reflects round, distance, protection, and
@@ -124,4 +173,4 @@ Replay updates player team assignment, active contract team, injury team,
 pick ownership, and transaction history together. A stale proposal fails if
 ownership changed before execution.
 
-The trade model version is `trade-market-cba-2026-27.v1`.
+The trade model version is `trade-market-front-office.v3`.
