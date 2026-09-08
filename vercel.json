@@ -9,7 +9,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 60,
-      "excludeFiles": "{tests/**,docs/**,.github/**,ETL/**,data/**,**/__pycache__/**}"
+      "excludeFiles": "{tests/**,docs/**,.github/**,ETL/**,**/__pycache__/**}"
     }
   }
 }
