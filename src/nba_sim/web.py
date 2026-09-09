@@ -1647,6 +1647,7 @@ class DashboardService:
                 scheduled,
                 progress=progress,
                 cancelled=cancelled,
+                workers=1 if self.deployment_mode == "vercel-full" else None,
             )
             if cancelled():
                 with self._franchise_season_job_lock:
@@ -1699,6 +1700,10 @@ class DashboardService:
                 with self._franchise_season_job_lock:
                     self._franchise_season_jobs[job_id].status = "cancelled"
                 return
+            LOGGER.exception(
+                "franchise season job failed",
+                extra={"job_id": job_id, "save_id": loaded.metadata.save_id},
+            )
             with self._franchise_season_job_lock:
                 job = self._franchise_season_jobs[job_id]
                 job.status = "failed"
