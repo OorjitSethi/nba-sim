@@ -313,6 +313,7 @@ class DashboardService:
         warehouse_path: str | Path | None = None,
         deployment_mode: str = "local",
         matchup_trial_limit: int = 10_000,
+        franchise_repository: FranchiseSaveRepository | None = None,
     ) -> None:
         if matchup_trial_limit < 25:
             raise ValueError("matchup_trial_limit must be at least 25")
@@ -337,7 +338,7 @@ class DashboardService:
         self._league_job_lock = threading.RLock()
         self._franchise_season_jobs: dict[str, FranchiseSeasonSimulationJob] = {}
         self._franchise_season_job_lock = threading.RLock()
-        self.franchise_repository = FranchiseSaveRepository(
+        self.franchise_repository = franchise_repository or FranchiseSaveRepository(
             self.warehouse.path.parent / "franchise_saves.sqlite"
         )
 
@@ -386,7 +387,7 @@ class DashboardService:
             "deployment": {
                 "mode": self.deployment_mode,
                 "matchup_trial_limit": self.matchup_trial_limit,
-                "persistent_storage": self.deployment_mode == "local",
+                "persistent_storage": self.deployment_mode in {"local", "vercel-full"},
             },
             "data_season": (
                 f"{self.profile_repository.season} roster"
@@ -5228,11 +5229,16 @@ def _trade_packages(
     return tuple(packages)
 
 
-def _handler(service: DashboardService) -> type[BaseHTTPRequestHandler]:
+def _handler(service_source: DashboardService | Any) -> type[BaseHTTPRequestHandler]:
     class DashboardHandler(BaseHTTPRequestHandler):
         server_version = "NBASimLocal/0.1"
 
         def do_GET(self) -> None:
+            service = (
+                service_source(self)
+                if callable(service_source)
+                else service_source
+            )
             path = urlparse(self.path).path
             if path == "/api/metadata":
                 self._json(HTTPStatus.OK, service.metadata())
@@ -5255,6 +5261,11 @@ def _handler(service: DashboardService) -> type[BaseHTTPRequestHandler]:
                 return
 
         def do_POST(self) -> None:
+            service = (
+                service_source(self)
+                if callable(service_source)
+                else service_source
+            )
             path = urlparse(self.path).path
             actions = {
                 "/api/matchup": service.run_matchup,

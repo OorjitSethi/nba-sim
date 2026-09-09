@@ -707,9 +707,10 @@ function initializeMetadata() {
   const defaults = state.metadata.defaults;
   const deployment = state.metadata.deployment || { mode: "local" };
   const hosted = deployment.mode === "vercel-demo";
+  const hostedFull = deployment.mode === "vercel-full";
   $("#data-season").textContent = hosted
     ? `${state.metadata.data_season} · hosted demo`
-    : `${state.metadata.data_season} snapshot · local`;
+    : `${state.metadata.data_season} snapshot · ${hostedFull ? "cloud" : "local"}`;
   $("#home-team").innerHTML = optionList(defaults.home);
   $("#away-team").innerHTML = optionList(defaults.away);
   $("#higher-seed").innerHTML = optionList("DEN");

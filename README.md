@@ -3,9 +3,10 @@
 [![Tests](https://github.com/oorjitsethi/nba-sim/actions/workflows/tests.yml/badge.svg)](https://github.com/oorjitsethi/nba-sim/actions/workflows/tests.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-c7a468)](https://www.python.org/)
 
-**[Launch the hosted Matchup Lab](https://nba-sim-three.vercel.app/)** — a
-stateless, fictional-data demonstration of the same possession engine. The full
-franchise game, Stats Central, league simulation, and persistent saves run locally.
+**[Play NBA Sim online](https://nba-sim-three.vercel.app/)** — current point-in-time
+rosters, Matchup Lab, Franchise, Stats Central, league simulation, competitions,
+and model-health tools in one deployment. Franchise saves are isolated by an
+anonymous browser session and checkpointed to private cloud storage.
 
 <img src="docs/assets/dashboard-hero.jpg" alt="NBA Sim Matchup Lab dashboard" width="100%" />
 
@@ -408,11 +409,11 @@ tests/          replay, invariant, determinism, and statistical tests
 
 ## Data and repository hygiene
 
-No downloaded NBA database, model weights, or local franchise saves are committed.
-The public repository builds a deterministic fictional fixture for tests and the
-hosted demo. Downloaded source payloads, generated warehouses, franchise saves,
-caches, model artifacts, and environment files are excluded from Git. Do not
-commit licensed tracking exports or local save databases.
+The hosted release includes a compact, read-only point-in-time roster/statistics
+seed. Raw source payloads, model weights, local franchise saves, generated
+warehouses, caches, and environment files remain excluded from Git. The test
+suite can independently build a deterministic fictional fixture. Do not commit
+licensed tracking exports or local save databases.
 
 NBA Sim is an independent research project and is not affiliated with, endorsed
 by, or licensed by the NBA, NBA 2K, Take-Two Interactive, or any NBA team.
