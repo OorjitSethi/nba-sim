@@ -1462,7 +1462,7 @@ class DashboardService:
         completed, health, injuries = self._execute_franchise_game_batch(
             loaded,
             scheduled,
-            workers=1 if self.deployment_mode == "vercel-full" else None,
+            workers=1 if getattr(self, "deployment_mode", "local") == "vercel-full" else None,
         )
         target = max(item.game_date for item in completed)
         updated = self.franchise_repository.append_event(
@@ -1652,7 +1652,7 @@ class DashboardService:
                 scheduled,
                 progress=progress,
                 cancelled=cancelled,
-                workers=1 if self.deployment_mode == "vercel-full" else None,
+                workers=1 if getattr(self, "deployment_mode", "local") == "vercel-full" else None,
             )
             if cancelled():
                 with self._franchise_season_job_lock:
@@ -1707,7 +1707,10 @@ class DashboardService:
                 return
             LOGGER.exception(
                 "franchise season job failed",
-                extra={"job_id": job_id, "save_id": loaded.metadata.save_id},
+                extra={
+                    "job_id": job_id,
+                    "save_id": getattr(getattr(loaded, "metadata", None), "save_id", None),
+                },
             )
             with self._franchise_season_job_lock:
                 job = self._franchise_season_jobs[job_id]
