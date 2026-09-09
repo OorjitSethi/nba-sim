@@ -715,7 +715,7 @@ function initializeMetadata() {
   $("#away-team").innerHTML = optionList(defaults.away);
   $("#higher-seed").innerHTML = optionList("DEN");
   $("#lower-seed").innerHTML = optionList("MIN");
-  $("#franchise-team").innerHTML = optionList("UTA");
+  $("#franchise-team").innerHTML = optionList("PHX");
   const trialInput = $("#matchup-trials");
   trialInput.max = deployment.matchup_trial_limit || 10000;
   trialInput.value = hosted ? Math.min(25, defaults.trials) : defaults.trials;

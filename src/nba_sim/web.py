@@ -383,8 +383,8 @@ class DashboardService:
         return {
             "teams": teams,
             "defaults": {
-                "home": "UTA" if "UTA" in self._team_cache else teams[0]["abbreviation"],
-                "away": "MEM" if "MEM" in self._team_cache else teams[1]["abbreviation"],
+                "home": "LAL" if any(team["abbreviation"] == "LAL" for team in teams) else teams[0]["abbreviation"],
+                "away": "OKC" if any(team["abbreviation"] == "OKC" for team in teams) else teams[1]["abbreviation"],
                 "seed": 7,
                 "trials": min(100, self.matchup_trial_limit),
             },
