@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -18,6 +19,9 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
 from itertools import groupby
+
+
+LOGGER = logging.getLogger("nba_sim.web")
 
 from nba_sim.competition.season import (
     PlayoffSeriesSimulator,
@@ -5451,7 +5455,11 @@ def _handler(service_source: DashboardService | Any) -> type[BaseHTTPRequestHand
                         "recoverable": True,
                     },
                 )
-            except Exception:
+            except Exception as error:
+                LOGGER.exception(
+                    "dashboard request failed",
+                    extra={"request_path": path, "error_type": type(error).__name__},
+                )
                 self._json(
                     HTTPStatus.INTERNAL_SERVER_ERROR,
                     {"error": "The simulation failed unexpectedly."},
