@@ -1014,6 +1014,16 @@ function initializeLeague() {
         start_date: "2026-10-20",
         end_date: "2027-04-12",
       });
+      if (job.status === "completed" && job.result) {
+        renderLeagueProgress(job);
+        state.leagueResult = job.result;
+        state.leagueVisibleGames = 60;
+        renderLeagueSeason(state.leagueResult);
+        $("#league-results").classList.remove("hidden");
+        setLeagueRunning(false);
+        showToast(`Detailed season complete · seed ${state.leagueResult.seed}`);
+        return;
+      }
       state.leagueJobId = job.job_id;
       localStorage.setItem(LEAGUE_JOB_STORAGE_KEY, job.job_id);
       renderLeagueProgress(job);
@@ -1583,6 +1593,39 @@ function initializeFranchise() {
       state.franchise.season_hub?.games_played || 0,
     );
     try {
+      if (state.metadata?.deployment?.mode === "vercel-full") {
+        setFranchiseSeasonRunning(true);
+        const total = scope === "full_season"
+          ? Number(state.franchise.season_hub?.remaining_games || 1230)
+          : 0;
+        renderFranchiseSeasonProgress({
+          status: "running",
+          scope,
+          completed_games: 0,
+          total_games: total,
+          progress: 0,
+          elapsed_seconds: 0,
+        });
+        state.franchise = await api("/api/franchise/simulate-games", {
+          save_id: state.franchise.save.save_id,
+          scope,
+        });
+        const completed = Number(
+          state.franchise.season_simulation?.games_completed || 0,
+        );
+        renderFranchiseSeasonProgress({
+          status: "completed",
+          scope,
+          completed_games: completed,
+          total_games: completed,
+          progress: 1,
+          elapsed_seconds: 0,
+        });
+        setFranchiseSeasonRunning(false);
+        renderFranchise(state.franchise);
+        showToast(`${completed.toLocaleString()} exact games simulated and saved.`);
+        return;
+      }
       const job = await api("/api/franchise/simulate-games/start", {
         save_id: state.franchise.save.save_id,
         scope,
@@ -1633,6 +1676,18 @@ function initializeFranchise() {
       ? "Simulating every remaining series with the full game engine…"
       : `Simulating the ${nextRound} game by game…`;
     try {
+      if (state.metadata?.deployment?.mode === "vercel-full") {
+        state.franchise = await api("/api/franchise/simulate-postseason", {
+          save_id: state.franchise.save.save_id,
+          scope,
+        });
+        renderFranchise(state.franchise);
+        const completed = Number(
+          state.franchise.postseason_simulation?.games_completed || 0,
+        );
+        showToast(`${completed.toLocaleString()} playoff games simulated and saved.`);
+        return;
+      }
       const job = await api("/api/franchise/simulate-postseason/start", {
         save_id: state.franchise.save.save_id,
         scope,

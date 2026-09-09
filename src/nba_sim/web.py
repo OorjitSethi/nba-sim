@@ -777,6 +777,10 @@ class DashboardService:
             for stale in completed_jobs[:-4]:
                 self._league_jobs.pop(stale.job_id, None)
 
+        if self.deployment_mode == "vercel-full":
+            self._run_league_job(job.job_id)
+            return self._league_job_snapshot(job, include_result=True)
+
         thread = threading.Thread(
             target=self._run_league_job,
             args=(job.job_id,),
@@ -1458,6 +1462,7 @@ class DashboardService:
         completed, health, injuries = self._execute_franchise_game_batch(
             loaded,
             scheduled,
+            workers=1 if self.deployment_mode == "vercel-full" else None,
         )
         target = max(item.game_date for item in completed)
         updated = self.franchise_repository.append_event(
